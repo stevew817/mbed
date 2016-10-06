@@ -1,6 +1,6 @@
 /***************************************************************************//**
- * @file em_system.c
- * @brief System Peripheral API
+ * @file
+ * @brief General Purpose Cyclic Redundancy Check (GPCRC) API.
  * @version 5.0.0
  *******************************************************************************
  * @section License
@@ -30,9 +30,10 @@
  *
  ******************************************************************************/
 
-#include "em_system.h"
+#include "em_gpcrc.h"
 #include "em_assert.h"
-#include <stddef.h>
+
+#if defined(GPCRC_PRESENT) && (GPCRC_COUNT > 0)
 
 /***************************************************************************//**
  * @addtogroup emlib
@@ -40,79 +41,86 @@
  ******************************************************************************/
 
 /***************************************************************************//**
- * @addtogroup SYSTEM
+ * @addtogroup GPCRC
  * @{
  ******************************************************************************/
 
 /*******************************************************************************
- **************************   GLOBAL FUNCTIONS   *******************************
+ ***************************   GLOBAL FUNCTIONS   ******************************
  ******************************************************************************/
 
 /***************************************************************************//**
  * @brief
- *   Get chip major/minor revision.
+ *   Initialize the General Purpose Cyclic Redundancy Check (GPCRC) module.
  *
- * @param[out] rev
- *   Location to place chip revision info.
+ * @details
+ *   Use this function to configure the operational parameters of the GPCRC
+ *   such as the polynomial to use and how the input should be preprocessed
+ *   before entering the CRC calculation.
+ *
+ * @note
+ *   This function will not copy the init value to the data register in order
+ *   to prepare for a new CRC calculation. This must be done by a call
+ *   to @ref GPCRC_Start before each calculation, or by using the
+ *   autoInit functionality.
+ *
+ * @param[in] gpcrc
+ *   Pointer to GPCRC peripheral register block.
+ *
+ * @param[in] init
+ *   Pointer to initialization structure used to configure the GPCRC.
  ******************************************************************************/
-void SYSTEM_ChipRevisionGet(SYSTEM_ChipRevision_TypeDef *rev)
+void GPCRC_Init(GPCRC_TypeDef * gpcrc, const GPCRC_Init_TypeDef * init)
 {
-  uint8_t tmp;
+  uint32_t polySelect;
 
-  EFM_ASSERT(rev);
-
-  /* CHIP FAMILY bit [5:2] */
-  tmp  = (((ROMTABLE->PID1 & _ROMTABLE_PID1_FAMILYMSB_MASK) >> _ROMTABLE_PID1_FAMILYMSB_SHIFT) << 2);
-  /* CHIP FAMILY bit [1:0] */
-  tmp |=  ((ROMTABLE->PID0 & _ROMTABLE_PID0_FAMILYLSB_MASK) >> _ROMTABLE_PID0_FAMILYLSB_SHIFT);
-  rev->family = tmp;
-
-  /* CHIP MAJOR bit [3:0] */
-  rev->major = (ROMTABLE->PID0 & _ROMTABLE_PID0_REVMAJOR_MASK) >> _ROMTABLE_PID0_REVMAJOR_SHIFT;
-
-  /* CHIP MINOR bit [7:4] */
-  tmp  = (((ROMTABLE->PID2 & _ROMTABLE_PID2_REVMINORMSB_MASK) >> _ROMTABLE_PID2_REVMINORMSB_SHIFT) << 4);
-  /* CHIP MINOR bit [3:0] */
-  tmp |=  ((ROMTABLE->PID3 & _ROMTABLE_PID3_REVMINORLSB_MASK) >> _ROMTABLE_PID3_REVMINORLSB_SHIFT);
-  rev->minor = tmp;
-}
-
-
-/***************************************************************************//**
- * @brief
- *    Get factory calibration value for a given peripheral register.
- *
- * @param[in] regAddress
- *    Peripheral calibration register address to get calibration value for. If
- *    a calibration value is found then this register is updated with the
- *    calibration value.
- *
- * @return
- *    True if a calibration value exists, false otherwise.
- ******************************************************************************/
-bool SYSTEM_GetCalibrationValue(volatile uint32_t *regAddress)
-{
-  SYSTEM_CalAddrVal_TypeDef * p, * end;
-
-  p   = (SYSTEM_CalAddrVal_TypeDef *)(DEVINFO_BASE & 0xFFFFF000);
-  end = (SYSTEM_CalAddrVal_TypeDef *)DEVINFO_BASE;
-
-  for ( ; p < end; p++)
+  if (init->crcPoly == 0x04C11DB7)
   {
-    if (p->address == 0xFFFFFFFF)
-    {
-      /* Found table terminator */
-      return false;
-    }
-    if (p->address == (uint32_t)regAddress)
-    {
-      *regAddress = p->calValue;
-      return true;
-    }
+    polySelect = GPCRC_CTRL_POLYSEL_CRC32;
   }
-  /* Nothing found for regAddress */
-  return false;
+  else
+  {
+    // If not using the fixed CRC-32 polynomial then we must be using 16-bit
+    EFM_ASSERT((init->crcPoly & 0xFFFF0000) == 0);
+    polySelect = GPCRC_CTRL_POLYSEL_16;
+  }
+
+  gpcrc->CTRL = (((uint32_t)init->autoInit << _GPCRC_CTRL_AUTOINIT_SHIFT)
+                | ((uint32_t)init->reverseByteOrder << _GPCRC_CTRL_BYTEREVERSE_SHIFT)
+                | ((uint32_t)init->reverseBits << _GPCRC_CTRL_BITREVERSE_SHIFT)
+                | ((uint32_t)init->enableByteMode << _GPCRC_CTRL_BYTEMODE_SHIFT)
+                | polySelect
+                | ((uint32_t)init->enable << _GPCRC_CTRL_EN_SHIFT));
+
+  if (polySelect == GPCRC_CTRL_POLYSEL_16)
+  {
+    // Set CRC polynomial value
+    uint32_t revPoly = __RBIT(init->crcPoly) >> 16;
+    gpcrc->POLY = revPoly & _GPCRC_POLY_POLY_MASK;
+  }
+
+  // Load CRC initialization value to GPCRC_INIT
+  gpcrc->INIT = init->initValue;
 }
 
-/** @} (end addtogroup SYSTEM) */
+/***************************************************************************//**
+ * @brief
+ *   Reset GPCRC registers to the hardware reset state.
+ *
+ * @note
+ *   The data registers are not reset by this function.
+ *
+ * @param[in] gpcrc
+ *   Pointer to GPCRC peripheral register block.
+ ******************************************************************************/
+void GPCRC_Reset(GPCRC_TypeDef * gpcrc)
+{
+  gpcrc->CTRL = _GPCRC_CTRL_RESETVALUE;
+  gpcrc->POLY = _GPCRC_POLY_RESETVALUE;
+  gpcrc->INIT = _GPCRC_INIT_RESETVALUE;
+}
+
+/** @} (end addtogroup GPCRC) */
 /** @} (end addtogroup emlib) */
+
+#endif /* defined(GPCRC_COUNT) && (GPCRC_COUNT > 0) */
