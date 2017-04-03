@@ -158,7 +158,7 @@ static void crypto_sha_update_state( uint32_t state[8],
                       CRYPTO_CMD_INSTR_SELDDATA0DDATA1 );
 
     /* Load the data block(s) */
-    for ( int i = 0; i < blocks; i++ ) {
+    for ( size_t i = 0; i < blocks; i++ ) {
         if ((uint32_t)(&data[i*64]) & 0x3)
         {
             uint32_t temp[16];
