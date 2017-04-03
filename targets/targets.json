@@ -1922,7 +1922,7 @@
         "inherits": ["EFM32"],
         "extra_labels_add": ["EFM32GG", "1024K", "SL_AES"],
         "core": "Cortex-M3",
-        "macros": ["EFM32GG990F1024", "TRANSACTION_QUEUE_SIZE_SPI=4"],
+        "macros": ["EFM32GG990F1024", "TRANSACTION_QUEUE_SIZE_SPI=4", "MBEDTLS_CONFIG_HW_SUPPORT"],
         "supported_toolchains": ["GCC_ARM", "ARM", "uARM", "IAR"],
         "release_versions": ["2", "5"],
         "device_name": "EFM32GG990F1024",
