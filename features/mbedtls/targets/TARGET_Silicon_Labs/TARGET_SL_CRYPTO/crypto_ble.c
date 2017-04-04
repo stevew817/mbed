@@ -352,21 +352,21 @@ int mbedtls_process_ble_rpa(  unsigned char         **keytable,
                               const unsigned char   hash[3],
                               size_t                *match )
 {
-    CRYPTO_TypeDef *device = crypto_management_acquire_preemption();
     bool done = false;
     size_t index;
+    unsigned char data_register[16] = {0};
+    data_register[13] = prand[0];
+    data_register[14] = prand[1];
+    data_register[15] = prand[2];
+
+    CRYPTO_TypeDef *device = crypto_management_acquire_preemption();
     /* Set up CRYPTO to do AES, and load prand */
     device->CTRL     = CRYPTO_CTRL_AES_AES128;
     device->SEQCTRL  = 0UL;
     device->SEQCTRLB = 0UL;
     device->WAC      = 0UL;
 
-    unsigned char data_register[16] = {0};
-    data_register[13] = prand[0];
-    data_register[14] = prand[1];
-    data_register[15] = prand[2];
     CRYPTO_DataWrite(&device->DATA1, (uint32_t*)data_register);
-
 
     CRYPTO_SEQ_LOAD_2( device,
                        CRYPTO_CMD_INSTR_DATA1TODATA0,
@@ -390,6 +390,8 @@ int mbedtls_process_ble_rpa(  unsigned char         **keytable,
         CRYPTO_DataRead(&device->DATA0, (uint32_t*)data_register);
     }
 
+    crypto_management_release_preemption(device);
+
     if ( (!done) && (index > 0) ) {
         if ( (data_register[13] == hash[0])
              && (data_register[14] == hash[1])
@@ -397,13 +399,11 @@ int mbedtls_process_ble_rpa(  unsigned char         **keytable,
             *match = index - 1;
             done = true;
         }
-    }
+    }    
 
     if ( done ) {
-        crypto_management_release_preemption(device);
         return 0;
     } else {
-        crypto_management_release_preemption(device);
         return -1;
     }    
 }
