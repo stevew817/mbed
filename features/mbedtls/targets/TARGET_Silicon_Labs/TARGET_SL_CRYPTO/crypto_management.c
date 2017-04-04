@@ -117,28 +117,32 @@ CRYPTO_TypeDef *crypto_management_acquire( void )
     CRYPTO_TypeDef *device = NULL;
 
     /* Acquire device ownership mutex here */
-    crypto_management_critical_enter();
 #if defined( MBEDTLS_THREADING_C )
     for ( int i = 0; i < CRYPTO_COUNT; i++ ) {
         if ( 0 == mbedtls_mutex_trylock(&crypto_locks[i]) ) {
             /* Locked a device! */
+            crypto_management_critical_enter();
             CRYPTO_CLOCK_ENABLE( crypto_devices[i].clockMask );
+            crypto_management_critical_exit();
             device = crypto_devices[i].device;
         }
     }
     /* If no device immediately available, pend on the first one */
     if ( device == NULL ) {
         mbedtls_mutex_lock( &crypto_locks[0] );
+        crypto_management_critical_enter();
         CRYPTO_CLOCK_ENABLE( crypto_devices[0].clockMask );
+        crypto_management_critical_exit();
         device = crypto_devices[0].device;
     }
 #endif
     if ( device == NULL ) {
+        crypto_management_critical_enter();
         CRYPTO_CLOCK_ENABLE( crypto_devices[0].clockMask );
+        crypto_management_critical_exit();
         device = crypto_devices[0].device;
     }
 
-    crypto_management_critical_exit();
     return device;
 }
 
@@ -160,6 +164,12 @@ void crypto_management_critical_enter( void )
 {
     /* Turn off interrupts that can cause preemption */
     critical_irq_state = CORE_EnterCritical();
+}
+
+/* Yield from critical section on this device */
+void crypto_management_critical_yield( void )
+{
+    CORE_YieldCritical();
 }
 
 /* Exit critical section on this device */
