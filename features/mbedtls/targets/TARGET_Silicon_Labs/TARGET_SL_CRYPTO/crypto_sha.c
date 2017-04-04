@@ -94,8 +94,7 @@ static const unsigned char sha_padding[64] =
 
 typedef enum {
     CRYPTO_SHA1,
-    CRYPTO_SHA224,
-    CRYPTO_SHA256
+    CRYPTO_SHA2
 } crypto_sha_mode_t;
 
 /*
@@ -133,8 +132,7 @@ static void crypto_sha_update_state( uint32_t state[8],
         case CRYPTO_SHA1:
             crypto->CTRL = CRYPTO_CTRL_SHA_SHA1;
             break;
-        case CRYPTO_SHA224:
-        case CRYPTO_SHA256:
+        case CRYPTO_SHA2:
             crypto->CTRL = CRYPTO_CTRL_SHA_SHA2;
             break;
     }
@@ -216,15 +214,17 @@ void mbedtls_sha256_clone( mbedtls_sha256_context *dst,
 void mbedtls_sha256_starts( mbedtls_sha256_context *ctx, int is224 )
 {
     if ( is224 != 0 ) {
+        ctx->is224 = true;
         memcpy(ctx->state, init_state_sha224, 32);
     } else {
+        ctx->is224 = false;
         memcpy(ctx->state, init_state_sha256, 32);
     }
 }
 
 void mbedtls_sha256_process( mbedtls_sha256_context *ctx, const unsigned char data[64] )
 {
-    crypto_sha_update_state( ctx->state, data, 1, CRYPTO_SHA256 );
+    crypto_sha_update_state( ctx->state, data, 1, CRYPTO_SHA2 );
 }
 
 /*
@@ -260,7 +260,7 @@ void mbedtls_sha256_update( mbedtls_sha256_context *ctx, const unsigned char *in
     
     while( ilen >= 64 ) {
         size_t blocks = ilen / 64;
-        crypto_sha_update_state( ctx->state, input, blocks, CRYPTO_SHA256 );
+        crypto_sha_update_state( ctx->state, input, blocks, CRYPTO_SHA2 );
         input += blocks * 64;
         ilen  -= blocks * 64;
     }
@@ -293,7 +293,7 @@ void mbedtls_sha256_finish( mbedtls_sha256_context *ctx, unsigned char output[32
     mbedtls_sha256_update( ctx, sha_padding, padn );
     mbedtls_sha256_update( ctx, msglen, 8 );
 
-    memcpy( output, ctx->state, 32 );
+    memcpy( output, ctx->state, (ctx->is224 ? 28 : 32) );
 
     EFM_ASSERT(0 == status); /* Assert crypto device close/release is ok. */
 }

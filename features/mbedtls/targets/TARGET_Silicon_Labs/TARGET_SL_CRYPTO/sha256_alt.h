@@ -22,6 +22,8 @@
 #ifndef MBEDTLS_SHA256_ALT_H
 #define MBEDTLS_SHA256_ALT_H
 
+#include <stdbool.h>
+
 #if defined(MBEDTLS_SHA256_ALT)
 // Hardware accelerated implementation
 //
@@ -37,7 +39,8 @@ typedef struct
 {
     uint32_t total[2];          /*!< number of bytes processed  */
     uint32_t state[8];          /*!< intermediate digest state  */
-    uint8_t buffer[64];         /*!< data block being processed */
+    unsigned char buffer[64];   /*!< data block being processed */
+    bool is224;
 }
 mbedtls_sha256_context;
 
