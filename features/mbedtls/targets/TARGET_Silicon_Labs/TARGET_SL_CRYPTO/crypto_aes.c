@@ -309,25 +309,25 @@ int mbedtls_aes_crypt_cfb128( mbedtls_aes_context *ctx,
         switch( ctx->keybits )
         {
         case 128:
-            ret = CRYPTO_AES_CFB128( &ctx->aesdrv_ctx,
-                                     output,
-                                     input,
-                                     length,
-                                     (uint8_t*)ctx->key,
-                                     iv,
-                                     mode == MBEDTLS_AES_ENCRYPT ?
-                                     true : false );
+            CRYPTO_AES_CFB128( device,
+                               output,
+                               input,
+                               length,
+                               (uint8_t*)ctx->key,
+                               iv,
+                               mode == MBEDTLS_AES_ENCRYPT ?
+                               true : false );
         break;
     
         case 256:
-            ret = CRYPTO_AES_CFB256( &ctx->aesdrv_ctx,
-                                     output,
-                                     input,
-                                     length,
-                                     (uint8_t*)ctx->key,
-                                     iv,
-                                     mode == MBEDTLS_AES_ENCRYPT ?
-                                     true : false );
+            CRYPTO_AES_CFB256( device,
+                               output,
+                               input,
+                               length,
+                               (uint8_t*)ctx->key,
+                               iv,
+                               mode == MBEDTLS_AES_ENCRYPT ?
+                               true : false );
             break;
         
         default:
@@ -440,23 +440,23 @@ int mbedtls_aes_crypt_ctr( mbedtls_aes_context *ctx,
         switch( ctx->keybits )
         {
         case 128:
-            ret = CRYPTO_AES_CTR128( device,
-                                     output,
-                                     input,
-                                     length,
-                                     (uint8_t*)ctx->key,
-                                     nonce_counter,
-                                     NULL);
+            CRYPTO_AES_CTR128( device,
+                               output,
+                               input,
+                               length,
+                               (uint8_t*)ctx->key,
+                               nonce_counter,
+                               NULL );
         break;
     
         case 256:
-            ret = CRYPTO_AES_CTR256( device,
-                                     output,
-                                     input,
-                                     length,
-                                     (uint8_t*)ctx->key,
-                                     nonce_counter,
-                                     NULL);
+            CRYPTO_AES_CTR256( device,
+                               output,
+                               input,
+                               length,
+                               (uint8_t*)ctx->key,
+                               nonce_counter,
+                               NULL );
             break;
         
         default:

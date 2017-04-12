@@ -171,10 +171,10 @@ static void mbedtls_mpi_div_mod(CRYPTO_TypeDef *crypto,
     D[8]=0;                           /* Set MSWord of D to 0. */
 
     crypto_management_critical_enter();
-
     CRYPTO_DDataWrite(&crypto->DDATA1, Y);  /* Set C to Y (divisor) initially */
     CRYPTO_DDataWrite(&crypto->DDATA2, X);  /* Set U to X (dividend)initially */
     CRYPTO_DDataWrite(&crypto->DDATA3, N);  /* Set D to modulus p initially   */
+    crypto_management_critical_exit();
 
     CRYPTO_EXECUTE_3(crypto,
                      CRYPTO_CMD_INSTR_CLR,            /* DDATA0 = 0 */
@@ -189,9 +189,6 @@ static void mbedtls_mpi_div_mod(CRYPTO_TypeDef *crypto,
     /* while (C != 1024'd0)  */
     while ( !crypto_ddata0_is_zero(crypto, &status_reg) )
     {
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-        crypto_management_critical_yield();
-#endif
 
         lsb_C = (status_reg & _CRYPTO_DSTATUS_DDATA0LSBS_MASK) >> _CRYPTO_DSTATUS_DDATA0LSBS_SHIFT;
         if ((lsb_C & 0x1) == 0)
@@ -214,7 +211,9 @@ static void mbedtls_mpi_div_mod(CRYPTO_TypeDef *crypto,
                                  CRYPTO_CMD_INSTR_DDATA1TODDATA0,
                                  CRYPTO_CMD_INSTR_DDATA3TODDATA1,
                                  CRYPTO_CMD_INSTR_DDATA0TODDATA3);
+                crypto_management_critical_enter();
                 CRYPTO_DDATA0_260_BITS_READ(crypto, D);
+                crypto_management_critical_exit();
                 t = -t;
             }
 
@@ -337,8 +336,9 @@ static void mbedtls_mpi_div_mod(CRYPTO_TypeDef *crypto,
                               CRYPTO_CMD_INSTR_CSET,
                               CRYPTO_CMD_INSTR_ADDC,
                               CRYPTO_CMD_INSTR_DDATA0TODDATA2);
-
+            crypto_management_critical_enter();
             CRYPTO_DDataWrite(&crypto->DDATA0, N);
+            crypto_management_critical_exit();
         }
         else
         {
@@ -361,20 +361,23 @@ static void mbedtls_mpi_div_mod(CRYPTO_TypeDef *crypto,
 
     if (crypto_ddata0_is_zero(crypto, &status_reg))
     {
+        crypto_management_critical_enter();
         CRYPTO_DDataRead(&crypto->DDATA4, R);
+        crypto_management_critical_exit();
     }
     else
     {
+        crypto_management_critical_enter();
         CRYPTO_DDataWrite(&crypto->DDATA0, N);
+        crypto_management_critical_exit();
         CRYPTO_EXECUTE_2(crypto,
                          CRYPTO_CMD_INSTR_SELDDATA0DDATA4,
                          CRYPTO_CMD_INSTR_SUB
                          );
+        crypto_management_critical_enter();
         CRYPTO_DDataRead(&crypto->DDATA0, R);
+        crypto_management_critical_exit();
     }
-
-    crypto_management_critical_exit();
-
     return;
 } /* mbedtls_mpi_div_mod  */
 
@@ -385,7 +388,6 @@ static void mbedtls_mpi_div_mod(CRYPTO_TypeDef *crypto,
 int mbedtls_ecp_device_init( CRYPTO_TypeDef *device, const mbedtls_ecp_group *grp)
 {
     int             ret = 0;
-    crypto_management_critical_enter();
     
     /* Setup CRYPTO registers for ECC operation */
     device->CTRL     = CRYPTO_CTRL_DMA0RSEL_DDATA0;
@@ -422,8 +424,6 @@ int mbedtls_ecp_device_init( CRYPTO_TypeDef *device, const mbedtls_ecp_group *gr
             ret = MBEDTLS_ERR_ECP_FEATURE_UNAVAILABLE;
         break;
     }
-
-    crypto_management_critical_exit();
 
     return( ret );
 }
@@ -702,8 +702,6 @@ int mbedtls_internal_ecp_add_mixed( const mbedtls_ecp_group *grp,
 
     mbedtls_ecp_device_init(crypto, grp);
 
-    crypto_management_critical_enter();
-
     /*
       STEP 1:
 
@@ -751,6 +749,7 @@ int mbedtls_internal_ecp_add_mixed( const mbedtls_ecp_group *grp,
 
       STEP 1:
     */
+    crypto_management_critical_enter();
     CRYPTO_EXECUTE_18(crypto,
                       CRYPTO_CMD_INSTR_DMA0TODATA,
                       CRYPTO_CMD_INSTR_DDATA0TODDATA1,
@@ -777,6 +776,7 @@ int mbedtls_internal_ecp_add_mixed( const mbedtls_ecp_group *grp,
     ecp_crypto_ddata_write(&crypto->DDATA0, &P->Z);
     ecp_crypto_ddata_write(&crypto->DDATA0, &Q->X);
     ecp_crypto_ddata_write(&crypto->DDATA0, &Q->Y);
+    crypto_management_critical_exit();
 
     /*
       STEP 2:
@@ -826,12 +826,11 @@ int mbedtls_internal_ecp_add_mixed( const mbedtls_ecp_group *grp,
       STEP 2:
     */
 
+    crypto_management_critical_enter();
     ecp_crypto_ddata_write(&crypto->DDATA1, &P->Y);
+    crypto_management_critical_exit();
 
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-    crypto_management_critical_yield();
-#endif
-
+    crypto_management_critical_enter();
     CRYPTO_EXECUTE_11(crypto,
                       CRYPTO_CMD_INSTR_SELDDATA0DDATA1,
                       CRYPTO_CMD_INSTR_MSUB,
@@ -848,12 +847,13 @@ int mbedtls_internal_ecp_add_mixed( const mbedtls_ecp_group *grp,
                       CRYPTO_CMD_INSTR_MMUL
                       );
     ecp_crypto_ddata_write(&crypto->DDATA0, &P->X);
+    crypto_management_critical_exit();
 
-    SLCL_ECP_CHK( ecp_crypto_ddata_read(&crypto->DDATA0, &R->Z) );
+    crypto_management_critical_enter();
+    ret = ecp_crypto_ddata_read(&crypto->DDATA0, &R->Z);
+    crypto_management_critical_exit();
 
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-    crypto_management_critical_yield();
-#endif
+    if (ret != 0) goto cleanup;
 
     /*
       STEP 3:
@@ -913,9 +913,6 @@ int mbedtls_internal_ecp_add_mixed( const mbedtls_ecp_group *grp,
                       CRYPTO_CMD_INSTR_SELDDATA0DDATA4,
                       CRYPTO_CMD_INSTR_MSUB
                       );
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-    crypto_management_critical_yield();
-#endif
 
     /*
       STEP 3:
@@ -967,6 +964,7 @@ int mbedtls_internal_ecp_add_mixed( const mbedtls_ecp_group *grp,
       STEP 4:
     */
 
+    crypto_management_critical_enter();
     CRYPTO_EXECUTE_18(crypto,
                       CRYPTO_CMD_INSTR_SELDDATA0DDATA3,
                       CRYPTO_CMD_INSTR_MSUB,
@@ -990,12 +988,16 @@ int mbedtls_internal_ecp_add_mixed( const mbedtls_ecp_group *grp,
                       CRYPTO_CMD_INSTR_SELDDATA2DDATA4,
                       CRYPTO_CMD_INSTR_MSUB
                       );
-    SLCL_ECP_CHK( ecp_crypto_ddata_read(&crypto->DDATA0, &R->X) );
+    ret = ecp_crypto_ddata_read(&crypto->DDATA0, &R->X);
     ecp_crypto_ddata_write(&crypto->DDATA0, &P->Y);
-    SLCL_ECP_CHK( ecp_crypto_ddata_read(&crypto->DDATA0, &R->Y) );
+    crypto_management_critical_exit();
+    if ( ret != 0 ) goto cleanup;
+    crypto_management_critical_enter();
+    ret = ecp_crypto_ddata_read(&crypto->DDATA0, &R->Y);
+    crypto_management_critical_exit();
+    if ( ret != 0 ) goto cleanup;
 
  cleanup:
-    crypto_management_critical_exit();
     crypto_management_release( crypto );
     return ( ret );
 }
@@ -1029,8 +1031,6 @@ int mbedtls_internal_ecp_double_jac( const mbedtls_ecp_group *grp,
     CRYPTO_TypeDef *crypto = crypto_management_acquire();
 
     mbedtls_ecp_device_init(crypto, grp);
-
-    crypto_management_critical_enter();
 
     ecc_bigint_t _2YY;
     /*
@@ -1084,6 +1084,7 @@ int mbedtls_internal_ecp_double_jac( const mbedtls_ecp_group *grp,
 
       STEP 1:
     */
+    crypto_management_critical_enter();
     CRYPTO_EXECUTE_17(crypto,
                       CRYPTO_CMD_INSTR_DMA0TODATA,
                       CRYPTO_CMD_INSTR_DDATA0TODDATA1,
@@ -1107,15 +1108,16 @@ int mbedtls_internal_ecp_double_jac( const mbedtls_ecp_group *grp,
                       );
     ecp_crypto_ddata_write(&crypto->DDATA0, &P->Z);
     ecp_crypto_ddata_write(&crypto->DDATA0, &P->Y);
-    SLCL_ECP_CHK( ecp_crypto_ddata_read(&crypto->DDATA0, &R->Z) );
-
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-    crypto_management_critical_yield();
-#endif
+    ret = ecp_crypto_ddata_read(&crypto->DDATA0, &R->Z);
+    crypto_management_critical_exit();
+    if ( ret != 0 ) goto cleanup;
 
     CRYPTO_InstructionSequenceWait(crypto);
+
+    crypto_management_critical_enter();
     ecp_crypto_ddata_write(&crypto->DDATA4, &P->X);
     CRYPTO_DDataRead(&crypto->DDATA0, _2YY);
+    crypto_management_critical_exit();
 
     /*
       STEP 2:
@@ -1225,6 +1227,8 @@ int mbedtls_internal_ecp_double_jac( const mbedtls_ecp_group *grp,
 
       STEP 3:
     */
+
+    crypto_management_critical_enter();
     CRYPTO_EXECUTE_15(crypto,
                       CRYPTO_CMD_INSTR_SELDDATA2DDATA2,
                       CRYPTO_CMD_INSTR_MADD,
@@ -1245,11 +1249,9 @@ int mbedtls_internal_ecp_double_jac( const mbedtls_ecp_group *grp,
                       CRYPTO_CMD_INSTR_SELDDATA1DDATA2,
                       CRYPTO_CMD_INSTR_MMUL
                       );
-    SLCL_ECP_CHK( ecp_crypto_ddata_read(&crypto->DDATA0, &R->X) );
-
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-    crypto_management_critical_yield();
-#endif
+    ret = ecp_crypto_ddata_read(&crypto->DDATA0, &R->X);
+    crypto_management_critical_exit();
+    if ( ret != 0 ) goto cleanup;
 
     /*
       STEP 4:
@@ -1291,6 +1293,7 @@ int mbedtls_internal_ecp_double_jac( const mbedtls_ecp_group *grp,
 
       STEP 4:
     */
+    crypto_management_critical_enter();
     CRYPTO_EXECUTE_11(crypto,
                       CRYPTO_CMD_INSTR_DDATA0TODDATA3,
 
@@ -1308,10 +1311,14 @@ int mbedtls_internal_ecp_double_jac( const mbedtls_ecp_group *grp,
                       CRYPTO_CMD_INSTR_MSUB
                       );
     CRYPTO_DDataWrite(&crypto->DDATA0, _2YY);
-    SLCL_ECP_CHK( ecp_crypto_ddata_read(&crypto->DDATA0, &R->Y) );
+    crypto_management_critical_exit();
+
+    crypto_management_critical_enter();
+    ret = ecp_crypto_ddata_read(&crypto->DDATA0, &R->Y);
+    crypto_management_critical_exit();
+    if ( ret != 0 ) goto cleanup;
 
  cleanup:
-    crypto_management_critical_exit();
     crypto_management_release( crypto );
 
     return ( ret );
@@ -1367,19 +1374,20 @@ int mbedtls_internal_ecp_normalize_jac_many( const mbedtls_ecp_group *grp,
     MPI_TO_BIGINT( cc[0], &T[0]->Z );
 
     CRYPTO_TypeDef *crypto = crypto_management_acquire();
-    crypto_management_critical_enter();
 
     for( i = 1; i < t_len; i++ )
     {
+        crypto_management_critical_enter();
         ecp_crypto_ddata_write( &crypto->DDATA1, &T[i]->Z );
         CRYPTO_DDataWrite( &crypto->DDATA2, cc[i-1] );
+        crypto_management_critical_exit();
         CRYPTO_EXECUTE_2(crypto,
                          CRYPTO_CMD_INSTR_SELDDATA1DDATA2,
                          CRYPTO_CMD_INSTR_MMUL);
+        crypto_management_critical_enter();
         CRYPTO_DDataRead( &crypto->DDATA0, cc[i] );
+        crypto_management_critical_exit();
     }
-
-    crypto_management_critical_exit();
 
     memset(one, 0, sizeof(one));
     one[0]=1;
@@ -1390,8 +1398,6 @@ int mbedtls_internal_ecp_normalize_jac_many( const mbedtls_ecp_group *grp,
      */
     mbedtls_mpi_div_mod(crypto, one, cc[t_len-1], modulus, uu);
 
-    crypto_management_critical_enter();
-
     for( i = t_len - 1; ; i-- )
     {
         /*
@@ -1401,33 +1407,37 @@ int mbedtls_internal_ecp_normalize_jac_many( const mbedtls_ecp_group *grp,
         if( i == 0 )
         {
             /* Z_inv (DDATA2) = uu */
+            crypto_management_critical_enter();
             CRYPTO_DDataWrite(&crypto->DDATA2, uu);
+            crypto_management_critical_exit();
         }
         else
         {
             /* Z_inv (DDATA1) = uu x cc[i-1] modulo p */
             /* uu = uu x T[i]->Z modulo p */
+            crypto_management_critical_enter();
             CRYPTO_DDataWrite(&crypto->DDATA1, uu);
             CRYPTO_DDataWrite(&crypto->DDATA2, cc[i-1]);
             ecp_crypto_ddata_write( &crypto->DDATA3, &T[i]->Z );
+            crypto_management_critical_exit();
             CRYPTO_EXECUTE_5(crypto,
                              CRYPTO_CMD_INSTR_SELDDATA1DDATA2,
                              CRYPTO_CMD_INSTR_MMUL,
                              CRYPTO_CMD_INSTR_DDATA0TODDATA2, /* Z_inv (DDATA2) */
                              CRYPTO_CMD_INSTR_SELDDATA1DDATA3,
                              CRYPTO_CMD_INSTR_MMUL);
+            crypto_management_critical_enter();
             CRYPTO_DDataRead(&crypto->DDATA0, uu);
+            crypto_management_critical_exit();
         }
-
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-        crypto_management_critical_yield();
-#endif
 
         /*
          * proceed as in normalize()
          */
+        crypto_management_critical_enter();
         ecp_crypto_ddata_write(&crypto->DDATA3, &T[i]->X);
         ecp_crypto_ddata_write(&crypto->DDATA4, &T[i]->Y);
+        crypto_management_critical_exit();
 
         /* Z_inv  already in DDATA2 */
         CRYPTO_EXECUTE_12(crypto,
@@ -1444,12 +1454,10 @@ int mbedtls_internal_ecp_normalize_jac_many( const mbedtls_ecp_group *grp,
                           CRYPTO_CMD_INSTR_SELDDATA1DDATA4,
                           CRYPTO_CMD_INSTR_MMUL
                           );
+        crypto_management_critical_enter();
         ecp_crypto_ddata_read(&crypto->DDATA0, &T[i]->Y);
         ecp_crypto_ddata_read(&crypto->DDATA3, &T[i]->X);
-
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
         crypto_management_critical_exit();
-#endif
 
         /*
          * Post-precessing: reclaim some memory by shrinking coordinates
@@ -1461,21 +1469,11 @@ int mbedtls_internal_ecp_normalize_jac_many( const mbedtls_ecp_group *grp,
         SLCL_ECP_CHK( mbedtls_mpi_shrink( &T[i]->Y, grp->P.n ) );
         mbedtls_mpi_free( &T[i]->Z );
 
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-        crypto_management_critical_enter();
-#endif
-
         if( i == 0 )
             break;
     }
 
-#if defined( MBEDTLS_ECP_CRITICAL_SHORT )
-    crypto_management_critical_exit();
  cleanup:
-#else
- cleanup:
-    crypto_management_critical_exit();
-#endif
     crypto_management_release( crypto );
     mbedtls_free( cc );
 
@@ -1518,10 +1516,6 @@ int mbedtls_internal_ecp_normalize_jac( const mbedtls_ecp_group *grp,
 
     mbedtls_mpi_div_mod(crypto, one, Z, modulus, Z_inv);
 
-    crypto_management_critical_enter();
-
-    CRYPTO_DDataWrite(&crypto->DDATA1, Z_inv);
-
     /*
 
     Goals:
@@ -1555,9 +1549,11 @@ int mbedtls_internal_ecp_normalize_jac( const mbedtls_ecp_group *grp,
     R->X = R3 = P->X * P->Z_inv^2
 
     */
-
+    crypto_management_critical_enter();
+    CRYPTO_DDataWrite(&crypto->DDATA1, Z_inv);
     ecp_crypto_ddata_write(&crypto->DDATA3, &pt->X);
     ecp_crypto_ddata_write(&crypto->DDATA4, &pt->Y);
+    crypto_management_critical_exit();
 
     CRYPTO_EXECUTE_12(crypto,
                       CRYPTO_CMD_INSTR_DDATA1TODDATA2,
@@ -1574,10 +1570,11 @@ int mbedtls_internal_ecp_normalize_jac( const mbedtls_ecp_group *grp,
                       CRYPTO_CMD_INSTR_MMUL
                       );
 
+    crypto_management_critical_enter();
     ecp_crypto_ddata_read(&crypto->DDATA0, &pt->Y);
     ecp_crypto_ddata_read(&crypto->DDATA3, &pt->X);
-
     crypto_management_critical_exit();
+
     crypto_management_release( crypto );
 
     /*

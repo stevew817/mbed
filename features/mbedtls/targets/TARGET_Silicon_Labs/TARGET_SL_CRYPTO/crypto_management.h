@@ -38,8 +38,6 @@ void crypto_management_release( CRYPTO_TypeDef *device );
 
 /* Enter critical section on this device */
 void crypto_management_critical_enter( void );
-/* Yield from critical section on this device */
-void crypto_management_critical_yield( void );
 /* Exit critical section on this device */
 void crypto_management_critical_exit( void );
 
