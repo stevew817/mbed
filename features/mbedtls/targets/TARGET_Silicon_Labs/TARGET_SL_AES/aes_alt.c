@@ -202,9 +202,17 @@ int mbedtls_aes_crypt_cbc( mbedtls_aes_context *ctx,
                            const unsigned char *input,
                            unsigned char *output )
 {
+    uint8_t tmpIv[16];
+
     if( length % 16 )
     {
         return( MBEDTLS_ERR_AES_INVALID_INPUT_LENGTH );
+    }
+
+    if ( mode == MBEDTLS_AES_DECRYPT )
+    {
+        if ( length >= 16 )
+            memcpy( tmpIv, &input[length-16], 16 );
     }
 
     switch ( ctx->keybits )
@@ -227,6 +235,14 @@ int mbedtls_aes_crypt_cbc( mbedtls_aes_context *ctx,
             break;
         default:
            return( MBEDTLS_ERR_AES_INVALID_INPUT_LENGTH );
+    }
+
+    if ( length >= 16 )
+    {
+        if ( mode == MBEDTLS_AES_ENCRYPT )
+            memcpy( iv, &output[length-16], 16 );
+        else
+            memcpy( iv, tmpIv, 16 );
     }
 
     return( 0 );
@@ -350,6 +366,16 @@ int mbedtls_aes_crypt_cfb8( mbedtls_aes_context *ctx,
 
 #if defined(MBEDTLS_CIPHER_MODE_CTR)
 /*
+ * AES-CTR Nonce update function
+ */
+void aes_ctr_update_nonce( uint8_t *nonce_counter )
+{
+    for( size_t i = 16; i > 0; i-- )
+        if( ++nonce_counter[i - 1] != 0 )
+            break;
+}
+
+/*
  * AES-CTR buffer encryption/decryption
  */
 int mbedtls_aes_crypt_ctr( mbedtls_aes_context *ctx,
@@ -401,7 +427,7 @@ int mbedtls_aes_crypt_ctr( mbedtls_aes_context *ctx,
                         length,
                         ctx->key,
                         nonce_counter,
-                        0);
+                        &aes_ctr_update_nonce);
         break;
     
         case 256:
@@ -410,7 +436,7 @@ int mbedtls_aes_crypt_ctr( mbedtls_aes_context *ctx,
                         length,
                         ctx->key,
                         nonce_counter,
-                        0);
+                        &aes_ctr_update_nonce);
             break;
         
         default:
