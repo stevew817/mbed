@@ -150,10 +150,8 @@ static void crypto_sha_update_state( uint32_t state[8],
     /* Put the state back */
     CRYPTO_DDataWrite(&crypto->DDATA1, state);
 
-    CRYPTO_EXECUTE_3( crypto,
-                      CRYPTO_CMD_INSTR_DDATA1TODDATA0,
-                      CRYPTO_CMD_INSTR_DDATA1TODDATA2,
-                      CRYPTO_CMD_INSTR_SELDDATA0DDATA1 );
+    crypto->CMD = CRYPTO_CMD_INSTR_DDATA1TODDATA0;
+    crypto->CMD = CRYPTO_CMD_INSTR_SELDDATA0DDATA1;
 
     /* Load the data block(s) */
     for ( size_t i = 0; i < blocks; i++ ) {
@@ -174,7 +172,7 @@ static void crypto_sha_update_state( uint32_t state[8],
                            CRYPTO_CMD_INSTR_MADD32,
                            CRYPTO_CMD_INSTR_DDATA0TODDATA1 );
     }
-    CRYPTO_DDataRead(&crypto->DDATA0, state);
+    CRYPTO_DDataRead(&crypto->DDATA1, state);
 
     crypto_management_critical_exit();
     crypto_management_release( crypto );
@@ -213,6 +211,9 @@ void mbedtls_sha256_clone( mbedtls_sha256_context *dst,
  */
 void mbedtls_sha256_starts( mbedtls_sha256_context *ctx, int is224 )
 {
+    ctx->total[0] = 0;
+    ctx->total[1] = 0;
+
     if ( is224 != 0 ) {
         ctx->is224 = true;
         memcpy(ctx->state, init_state_sha224, 32);
@@ -275,7 +276,7 @@ void mbedtls_sha256_update( mbedtls_sha256_context *ctx, const unsigned char *in
  */
 void mbedtls_sha256_finish( mbedtls_sha256_context *ctx, unsigned char output[32] )
 {
-    uint32_t        last, padn;
+    uint32_t        last;
     uint32_t        high, low;
     unsigned char   msglen[8];
     int             status;
@@ -288,12 +289,12 @@ void mbedtls_sha256_finish( mbedtls_sha256_context *ctx, unsigned char output[32
     PUT_UINT32_BE( low,  msglen, 4 );
 
     last = ctx->total[0] & 0x3F;
-    padn = ( last < 56 ) ? ( 56 - last ) : ( 120 - last );
-
-    mbedtls_sha256_update( ctx, sha_padding, padn );
+    mbedtls_sha256_update( ctx, sha_padding, ( last < 56 ) ? 56 - last : 120 - last);
     mbedtls_sha256_update( ctx, msglen, 8 );
 
-    memcpy( output, ctx->state, (ctx->is224 ? 28 : 32) );
+    for ( size_t i = 0; i < (ctx->is224 ? 28 : 32); i+=4) {
+        *((uint32_t*)(&output[i])) = __REV(ctx->state[i >> 2]);
+    }
 
     EFM_ASSERT(0 == status); /* Assert crypto device close/release is ok. */
 }
@@ -341,6 +342,8 @@ void mbedtls_sha1_clone( mbedtls_sha1_context *dst,
  */
 void mbedtls_sha1_starts( mbedtls_sha1_context *ctx )
 {
+    ctx->total[0] = 0;
+    ctx->total[1] = 0;
     memcpy(ctx->state, init_state_sha1, 32);
 }
 
@@ -418,7 +421,9 @@ void mbedtls_sha1_finish( mbedtls_sha1_context *ctx,
     mbedtls_sha1_update( ctx, sha_padding, padn );
     mbedtls_sha1_update( ctx, msglen, 8 );
 
-    memcpy(output, ctx->state, 20);
+    for ( size_t i = 0; i < 20; i+=4) {
+        *((uint32_t*)(&output[i])) = __REV(ctx->state[i >> 2]);
+    }
 }
 
 /* Internal use */
