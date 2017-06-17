@@ -39,6 +39,22 @@ static uint8_t MAC_address[8];
 static uint16_t PAN_address;
 static uint16_t short_address;
 
+/* Put the radio driver inside its own thread to de-escalate interrupts */
+static void rf_thread_loop();
+Thread rf_thread(osPriorityRealtime, 512);
+static void* rx_handle_queue[8];
+static volatile size_t rx_handle_index = 0;
+#define SL_RF_RX            (0x1 << 0)
+#define SL_RF_TX            (0x1 << 1)
+#define SL_RF_TX_ERR        (0x1 << 2)
+#define SL_RF_TX_TIMEOUT    (0x1 << 3)
+#define SL_RF_ACK_RECV      (0x1 << 4)
+#define SL_RF_RXFIFO_NF     (0x1 << 5)
+#define SL_RF_TXFIFO_NE     (0x1 << 6)
+#define SL_RF_RSSI_DONE     (0x1 << 7)
+#define SL_RF_ACK_TIMEOUT   (0x1 << 8)
+#define SL_RF_CAL_REQ       (0x1 << 9)
+
 /* Driver instance handle */
 static NanostackRfPhyEfr32 *rf = NULL;
 
@@ -591,6 +607,72 @@ uint32_t NanostackRfPhyEfr32::get_driver_version()
            (railversion.build);
 }
 
+static void rf_thread_loop(void) {
+    for (;;) {
+        osEvent event = rf_thread.signal_wait(0);
+        if (event.status != osEventSignal) {
+            continue;
+        }
+
+        if (event.value.signals & SL_RF_RX) {
+            void* rxPacketHandle = rx_handle_queue[rx_handle_index];
+            RAIL_RxPacketInfo_t* rxPacketInfo = (RAIL_RxPacketInfo_t*) memoryPtrFromHandle(rxPacketHandle);
+            tr_debug("rPKT %d\n", rxPacketInfo->dataLength);
+            /* Feed the received packet into the stack */
+            device_driver.phy_rx_cb(rxPacketInfo->dataPtr + 1,
+                                    rxPacketInfo->dataLength - 1,
+                                    //TODO: take a new RAIL release that exposes LQI, or have LQI as function of RSSI
+                                    255,
+                                    rxPacketInfo->appendedInfo.rssiLatch,
+                                    rf_radio_driver_id);
+            memoryFree(rxPacketHandle);
+            rx_handle_queue[rx_handle_index] = NULL;
+            rx_handle_index = (rx_handle_index + 1) % (sizeof(rx_handle_queue) / sizeof(void*));
+        }
+        if (event.value.signals & SL_RF_ACK_RECV) {
+            tr_debug("rACK\n");
+            device_driver.phy_tx_done_cb( rf_radio_driver_id,
+                                          current_tx_handle,
+                                          last_ack_pending_bit ? PHY_LINK_TX_DONE_PENDING : PHY_LINK_TX_DONE,
+                                          1,
+                                          1);
+        }
+        if (event.value.signals & SL_RF_TX) {
+            device_driver.phy_tx_done_cb( rf_radio_driver_id,
+                              current_tx_handle,
+                              PHY_LINK_TX_SUCCESS,
+                              // Succeeded, so how many times we tried is really not relevant.
+                              1,
+                              1);
+        }
+        if (event.value.signals & SL_RF_TX_TIMEOUT) {
+            device_driver.phy_tx_done_cb( rf_radio_driver_id,
+                                    current_tx_handle,
+                                    PHY_LINK_CCA_FAIL,
+                                    8,
+                                    1);
+        }
+        if (event.value.signals & SL_RF_CAL_REQ) {
+            // TODO: Implement on-the-fly recalibration
+            tr_debug("!!!! Calling for calibration\n");
+        }
+        if (event.value.signals & SL_RF_ACK_TIMEOUT) {
+            tr_debug("nACK\n");
+            waiting_for_ack = false;
+            device_driver.phy_tx_done_cb( rf_radio_driver_id,
+                                          current_tx_handle,
+                                          PHY_LINK_TX_FAIL,
+                                          1,
+                                          1);
+        }
+        if (event.value.signals & SL_RF_RXFIFO_NF) {
+            tr_debug("RX fifo near full\n");
+        }
+        if (event.value.signals & SL_RF_TXFIFO_NE) {
+            tr_debug("TX FIFO near empty\n");
+        }
+    }
+}
 
 //====================== RAIL-defined callbacks =========================
 /**
@@ -612,20 +694,12 @@ void RAILCb_RfReady(void) {
  * @param[in] status A bit field that defines what event caused the callback
  */
 void RAILCb_TxRadioStatus(uint8_t status) {
-   if(device_driver.phy_tx_done_cb != NULL) {
-    if(status == RAIL_TX_CONFIG_BUFFER_UNDERFLOW ||
-       status == RAIL_TX_CONFIG_CHANNEL_BUSY ||
-       status == RAIL_TX_CONFIG_TX_ABORTED ||
-       status == RAIL_TX_CONFIG_TX_BLOCKED) {
-        waiting_for_ack = false;
-        device_driver.phy_tx_done_cb( rf_radio_driver_id,
-                                      current_tx_handle,
-                                      PHY_LINK_CCA_FAIL,
-                                      8,
-                                      1);
-    } else {
-        tr_debug("Packet TX error %d\n", status);
-    }
+  if(status == RAIL_TX_CONFIG_BUFFER_UNDERFLOW ||
+     status == RAIL_TX_CONFIG_CHANNEL_BUSY ||
+     status == RAIL_TX_CONFIG_TX_ABORTED ||
+     status == RAIL_TX_CONFIG_TX_BLOCKED) {
+      waiting_for_ack = false;
+      rf_thread.signal_set(SL_RF_TX_TIMEOUT);
   }
   radio_state = RADIO_RX;
 }
@@ -648,7 +722,7 @@ void RAILCb_RxRadioStatus(uint8_t status) {
         case RAIL_RX_CONFIG_ADDRESS_FILTERED:
             break;
         default:
-            tr_debug("RXE %d\n", status);
+            //TODO: does Nanostack have any error handling here?
             break;
     }
 }
@@ -662,8 +736,7 @@ void RAILCb_RxRadioStatus(uint8_t status) {
  *
  */
 void RAILCb_CalNeeded(void) {
-  // TODO: Implement on-the-fly recalibration
-  tr_debug("!!!! Calling for calibration\n");
+  rf_thread.signal_set(SL_RF_CAL_REQ);
 }
 
 /**
@@ -691,15 +764,8 @@ void RAILCb_TimerExpired(void) {
  * callback.
  */
 void RAILCb_TxPacketSent(RAIL_TxPacketInfo_t *txPacketInfo) {
-  if(device_driver.phy_tx_done_cb != NULL) {
-    device_driver.phy_tx_done_cb( rf_radio_driver_id,
-                                  current_tx_handle,
-                                  // Normally we'd switch on ACK requested here, but Nanostack does that for us.
-                                  PHY_LINK_TX_SUCCESS,
-                                  // Succeeded, so how many times we tried is really not relevant.
-                                  1,
-                                  1);
-  }
+  rf_thread.signal_set(SL_RF_TX);
+
   last_tx = RAIL_GetTime();
   radio_state = RADIO_RX;
 }
@@ -731,12 +797,7 @@ void RAILCb_RxPacketReceived(void *rxPacketHandle) {
             /* Save the pending bit */
             last_ack_pending_bit = (rxPacketInfo->dataPtr[1] & (1 << 4)) != 0;
             /* Tell the stack we got an ACK */
-            //tr_debug("rACK\n");
-            device_driver.phy_tx_done_cb( rf_radio_driver_id,
-                                          current_tx_handle,
-                                          last_ack_pending_bit ? PHY_LINK_TX_DONE_PENDING : PHY_LINK_TX_DONE,
-                                          1,
-                                          1);
+            rf_thread.signal_set(SL_RF_ACK_RECV);
         } else {
             /* Figure out whether we want to not ACK this packet */
 
@@ -752,14 +813,14 @@ void RAILCb_RxPacketReceived(void *rxPacketHandle) {
                 RAIL_AutoAckCancelAck();
             }
 
-            //tr_debug("rPKT %d\n", rxPacketInfo->dataLength);
-            /* Feed the received packet into the stack */
-            device_driver.phy_rx_cb(rxPacketInfo->dataPtr + 1, 
-                                    rxPacketInfo->dataLength - 1, 
-                                    //TODO: take a new RAIL release that exposes LQI, or have LQI as function of RSSI
-                                    255, 
-                                    rxPacketInfo->appendedInfo.rssiLatch, 
-                                    rf_radio_driver_id);
+            for (size_t i = 0; i < (sizeof(rx_handle_queue) / sizeof(void*)); i++) {
+                if (rx_handle_queue[(i + rx_handle_index) % (sizeof(rx_handle_queue) / sizeof(void*))] == NULL) {
+                    memoryTakeReference(rxPacketHandle);
+                    rx_handle_queue[(i + rx_handle_index) % (sizeof(rx_handle_queue) / sizeof(void*))] = rxPacketHandle;
+                    rf_thread.signal_set(SL_RF_RX);
+                    break;
+                }
+            }
         }
     }
 }
@@ -792,13 +853,7 @@ void RAILCb_IEEE802154_DataRequestCommand(RAIL_IEEE802154_Address_t *address) {
  */
 void RAILCb_RxAckTimeout(void) {
     if(waiting_for_ack) {
-        tr_debug("nACK\n");
-        waiting_for_ack = false;
-        device_driver.phy_tx_done_cb( rf_radio_driver_id,
-                                      current_tx_handle,
-                                      PHY_LINK_TX_FAIL,
-                                      1,
-                                      1);
+        rf_thread.signal_set(SL_RF_ACK_TIMEOUT);
     }
 }
 
@@ -849,7 +904,7 @@ static bool rail_checkAndSwitchChannel(uint8_t newChannel) {
  * time of the callback dispatch.
  */
 void RAILCb_RxFifoAlmostFull(uint16_t bytesAvailable) {
-    tr_debug("RX near full (%d)\n", bytesAvailable);
+    rf_thread.signal_set(SL_RF_RXFIFO_NF);
 }
 
 /**
@@ -871,7 +926,7 @@ void RAILCb_RxFifoAlmostFull(uint16_t bytesAvailable) {
  * callback dispatch.
  */
 void RAILCb_TxFifoAlmostEmpty(uint16_t spaceAvailable) {
-    tr_debug("TX near empty (%d)\n", spaceAvailable);
+    rf_thread.signal_set(SL_RF_TXFIFO_NE);
 }
 
 /**
@@ -886,5 +941,6 @@ void RAILCb_TxFifoAlmostEmpty(uint16_t spaceAvailable) {
  * get the result.
  */
 void RAILCb_RssiAverageDone(int16_t avgRssi) {
-    tr_debug("RSSI done (%d)\n", avgRssi);
+    // Use GetAverageRSSI in event loop
+    rf_thread.signal_set(SL_RF_RSSI_DONE);
 }
