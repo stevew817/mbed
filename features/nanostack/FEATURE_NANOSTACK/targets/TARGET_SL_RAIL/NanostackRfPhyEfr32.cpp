@@ -41,7 +41,7 @@ static uint16_t short_address;
 
 /* Put the radio driver inside its own thread to de-escalate interrupts */
 static void rf_thread_loop();
-Thread rf_thread(osPriorityRealtime, 512);
+Thread rf_thread(osPriorityRealtime, 1024, NULL, "RF");
 static void* rx_handle_queue[8];
 static volatile size_t rx_handle_index = 0;
 #define SL_RF_RX            (0x1 << 0)
@@ -264,6 +264,9 @@ static int8_t rf_device_register(void)
 
     /*Register device driver*/
     rf_radio_driver_id = arm_net_phy_register(&device_driver);
+
+    osStatus status = rf_thread.start(mbed::callback(rf_thread_loop));
+    MBED_ASSERT(status == osOK);
 
     // If the radio hasn't called the ready callback by now, place it in the initing state
     if(radio_state == RADIO_UNINIT) {
