@@ -225,9 +225,9 @@ static int8_t rf_device_register(void)
     RAIL_IEEE802154_Init((RAIL_IEEE802154_Config_t*)&config);
 
     /* Get real MAC address */
-    /* MAC is stored MSB first */
-    memcpy(MAC_address, (const void*)&DEVINFO->UNIQUEH, 4);
-    memcpy(&MAC_address[4], (const void*)&DEVINFO->UNIQUEL, 4);
+    /* MAC is stored in OTA arrangement */
+    *((uint32_t*)(&MAC_address[0])) = __REV(DEVINFO->UNIQUEH);
+    *((uint32_t*)(&MAC_address[4])) = __REV(DEVINFO->UNIQUEL);
 
     /*Set pointer to MAC address*/
     device_driver.PHY_MAC = MAC_address;
@@ -577,26 +577,25 @@ void NanostackRfPhyEfr32::rf_unregister()
 
 void NanostackRfPhyEfr32::get_mac_address(uint8_t *mac)
 {
-    rf_if_lock();
-
-    memcpy(mac, MAC_address, sizeof(MAC_address));
-
-    rf_if_unlock();
+    /* Get real MAC address */
+    /* MAC is stored MSB first */
+    if(((uint32_t)mac & 0x3) != 0) {
+        for(size_t i = 0; i < 3; i++) {
+            mac[i] = ((uint8_t*)&DEVINFO->UNIQUEH)[3-i];
+        }
+        for(size_t i = 0; i < 3; i++) {
+            mac[4+i] = ((uint8_t*)&DEVINFO->UNIQUEL)[3-i];
+        }
+    } else {
+        *((uint32_t*)(&mac[0])) = __REV(DEVINFO->UNIQUEH);
+        *((uint32_t*)(&mac[4])) = __REV(DEVINFO->UNIQUEL);
+    }
 }
 
 void NanostackRfPhyEfr32::set_mac_address(uint8_t *mac)
 {
-    rf_if_lock();
-
-    if (NULL != rf) {
-        error("NanostackRfPhyEfr32 cannot change mac address when running");
-        rf_if_unlock();
-        return;
-    }
-    
-    memcpy(MAC_address, mac, sizeof(MAC_address));
-
-    rf_if_unlock();
+    error("NanostackRfPhyEfr32 cannot change hardcoded mac address");
+    return;
 }
 
 uint32_t NanostackRfPhyEfr32::get_driver_version()
