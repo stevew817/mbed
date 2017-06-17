@@ -34,6 +34,24 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Once this is a RAIL API this code can be removed as rail-types.h does this
+#ifndef RAIL_ENUM
+#ifdef DOXYGEN_SHOULD_SKIP_THIS
+/// The RAIL library does not use actual enums because the ARM EABI leaves their
+/// size ambiguous. This ambiguity causes problems if the application is built
+/// with different flags than the library. To work around this we use uint8_t
+/// typedefs in compiled code for all enums. For documentation purposes this is
+/// converted to an actual enum since it's much easier to read in Doxygen.
+#define RAIL_ENUM(name) enum name
+#else
+/// Define used for the actual RAIL library which sets each enum to a uint8_t
+/// typedef and creates a named enum structure for the enumeration values.
+#define RAIL_ENUM(name) typedef uint8_t name; enum name##_enum
+// For debugging use the following define to turn this back into a proper enum
+// #define RAIL_ENUM(name) typedef enum name##_enum name; enum name##_enum
+#endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -54,34 +72,34 @@ extern "C" {
 /** Scaling factor applied to all dBm power level inputs and outputs *   */
 #define PA_SCALING_FACTOR     10
 
-/** 
+// *INDENT-OFF*
+/**
  * @brief Selection of the rf power amplifier (PA) to use
  */
-typedef enum RADIO_PASel
-{
-    /** High power PA */
-    PA_SEL_2P4_HP,
-    /** Low power PA */
-    PA_SEL_2P4_LP,
-    /** SubGig PA*/
-    PA_SEL_SUBGIG,
-    /** Invalid PA Selection */
-    PA_SEL_INVALID
-} RADIO_PASel_t;
+RAIL_ENUM(RADIO_PASel_t) {
+  /** High power PA */
+  PA_SEL_2P4_HP,
+  /** Low power PA */
+  PA_SEL_2P4_LP,
+  /** SubGig PA*/
+  PA_SEL_SUBGIG,
+  /** Invalid PA Selection */
+  PA_SEL_INVALID
+};
 
 /**
  * @brief Selection should match the configuration of the voltage on the vPa pin
  *        of the chip.
  */
-typedef enum RADIO_PAVoltMode
-{
-    /** Vpa = Vbat = 3.3V */
-    PA_VOLTMODE_VBAT,
-    /** Vpa = DCDC Vout = 1.8V */
-    PA_VOLTMODE_DCDC
-} RADIO_PAVoltMode_t;
+RAIL_ENUM(RADIO_PAVoltMode_t) {
+  /** Vpa = Vbat = 3.3V */
+  PA_VOLTMODE_VBAT,
+  /** Vpa = DCDC Vout = 1.8V */
+  PA_VOLTMODE_DCDC
+};
+// *INDENT-ON*
 
-/** 
+/**
  * @brief Configuration structure for the rf power amplifier (PA)
  */
 typedef struct RADIO_PAInit {
@@ -115,7 +133,7 @@ typedef struct RADIO_PAInit {
  *
  * @warning
  *   The radio should not be transmitting when this function is called!
-*/
+ */
 bool RADIO_PA_Init(RADIO_PAInit_t * paInit);
 
 /**
@@ -268,6 +286,5 @@ void PA_PowerLevelOptimize(int32_t power);
 #ifdef __cplusplus
 }
 #endif
-
 
 #endif /* __RADIO_PA_H */

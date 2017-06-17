@@ -56,6 +56,15 @@ typedef struct RAIL_CalValues {
   uint32_t imageRejection; /**< Image Rejection (IR) calibration value */
 } RAIL_CalValues_t;
 
+/**
+ * @typedef RAIL_FrequencyOffset_t
+ * @brief Chip-specific type that represents the Frequency Offset Units
+ * The units on this chip are synth resolution steps (synthTicks).
+ * This is used to Get and Set Frequency Offset, which on EFR32 (at least
+ * for now), it is limited to 15 bits (size of SYNTH_CALOFFSET).
+ */
+typedef int16_t RAIL_FrequencyOffset_t;
+
 /** Invalid calibration value */
 #define RAIL_CAL_INVALID_VALUE  (0xFFFFFFFF)
 
@@ -65,8 +74,8 @@ typedef struct RAIL_CalValues {
  * This define can be used when you have no data to pass to the calibration
  * routines but wish to compute and save all possible calibrations.
  */
-#define RAIL_CALVALUES_UNINIT {                         \
-  RAIL_CAL_INVALID_VALUE, \
+#define RAIL_CALVALUES_UNINIT { \
+    RAIL_CAL_INVALID_VALUE,     \
 }
 
 /** EFR32 specific temperature calibration bit */

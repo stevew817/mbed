@@ -125,7 +125,7 @@ static const RAIL_ChannelConfig_t channels = {
 
 static const RAIL_IEEE802154_Config_t config = { false, false,
                                     RAIL_IEEE802154_ACCEPT_STANDARD_FRAMES,
-                                    RAIL_RF_STATE_RX, 100, 192, 894, NULL };
+                                    RAIL_RF_STATE_RX, 100, 192, 1000, NULL };
 
 static const RAIL_Init_t railInitParams = { 140, 38400000, RAIL_CAL_ALL_PENDING };
 
@@ -335,7 +335,7 @@ static int8_t rf_start_cca(uint8_t *data_ptr, uint16_t data_length, uint8_t tx_h
         RAIL_TxDataLoad(&txData);
         radio_state = RADIO_TX;
 
-        RAIL_TxOptions_t txOpt;
+        RAIL_TxOptions_t txOpt = RAIL_TX_OPTIONS_DEFAULTS;
         //Check to see whether we'll be waiting for an ACK
         if(data_ptr[1] & (1 << 5)) {
             txOpt.waitForAck = true;
@@ -344,7 +344,7 @@ static int8_t rf_start_cca(uint8_t *data_ptr, uint16_t data_length, uint8_t tx_h
             txOpt.waitForAck = false;
         }
 
-        //tr_debug("Called TX, len %d, chan %d, ack %d\n", data_length, channel, waiting_for_ack ? 1 : 0);
+        tr_debug("Called TX, len %d, chan %d, ack %d\n", data_length, channel, waiting_for_ack ? 1 : 0);
 
         if(RAIL_TxStartWithOptions(channel, &txOpt, &RAIL_CcaCsma, (RAIL_CsmaConfig_t*) &csma_config) == 0) {
           //Save packet number and sequence
@@ -629,8 +629,9 @@ static void rf_thread_loop(void) {
                                     rxPacketInfo->appendedInfo.rssiLatch,
                                     rf_radio_driver_id);
             memoryFree(rxPacketHandle);
-            rx_handle_queue[rx_handle_index] = NULL;
+            size_t prevIdx = rx_handle_index;
             rx_handle_index = (rx_handle_index + 1) % (sizeof(rx_handle_queue) / sizeof(void*));
+            rx_handle_queue[prevIdx] = NULL;
         }
         if (event.value.signals & SL_RF_ACK_RECV) {
             tr_debug("rACK\n");

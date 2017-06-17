@@ -15,6 +15,21 @@
 
 #include "rail_chip_specific.h"
 
+#ifdef DOXYGEN_SHOULD_SKIP_THIS
+/// The RAIL library does not use actual enums because the ARM EABI leaves their
+/// size ambiguous. This ambiguity causes problems if the application is built
+/// with different flags than the library. To work around this we use uint8_t
+/// typedefs in compiled code for all enums. For documentation purposes this is
+/// converted to an actual enum since it's much easier to read in Doxygen.
+#define RAIL_ENUM(name) enum name
+#else
+/// Define used for the actual RAIL library which sets each enum to a uint8_t
+/// typedef and creates a named enum structure for the enumeration values.
+#define RAIL_ENUM(name) typedef uint8_t name; enum name##_enum
+// For debugging use the following define to turn this back into a proper enum
+// #define RAIL_ENUM(name) typedef enum name##_enum name; enum name##_enum
+#endif
+
 /**
  * @addtogroup RAIL_API
  * @{
@@ -64,12 +79,12 @@ typedef struct RAIL_CalInit {
  * @brief Contains RAIL Library Version Information
  */
 typedef struct RAIL_Version {
-    uint32_t hash;    /**< Git hash */
-    uint8_t  major;   /**< Major number    */
-    uint8_t  minor;   /**< Minor number    */
-    uint8_t  rev;     /**< Revision number */
-    uint8_t  build;   /**< Build number */
-    uint8_t  flags;   /**< Build flags */
+  uint32_t hash;      /**< Git hash */
+  uint8_t  major;     /**< Major number    */
+  uint8_t  minor;     /**< Minor number    */
+  uint8_t  rev;       /**< Revision number */
+  uint8_t  build;     /**< Build number */
+  uint8_t  flags;     /**< Build flags */
 } RAIL_Version_t;
 
 /**
@@ -86,53 +101,53 @@ typedef struct RAIL_Init {
  * @enum RAIL_PtiProtocol_t
  * @brief The protocol that RAIL outputs via the Packet Trace Interface (PTI)
  */
-typedef enum RAIL_PtiProtocol {
+RAIL_ENUM(RAIL_PtiProtocol_t) {
   RAIL_PTI_PROTOCOL_CUSTOM = 0, /**< PTI output for a custom protocol */
   RAIL_PTI_PROTOCOL_THREAD = 2, /**< PTI output for the Thread protocol */
   RAIL_PTI_PROTOCOL_BLE = 3, /**< PTI output for the Bluetooth Smart protocol */
   RAIL_PTI_PROTOCOL_CONNECT = 4, /**< PTI output for the Connect protocol */
-  RAIL_PTI_PROTOCOL_ZIGBEE = 5, /**< PTI output for the Zigbee protocol */
-} RAIL_PtiProtocol_t;
+  RAIL_PTI_PROTOCOL_ZIGBEE = 5, /**< PTI output for the zigbee protocol */
+};
 
 /**
  * @enum RAIL_RadioState_t
  * @brief The current state of the radio
  */
-typedef enum RAIL_RadioState {
+RAIL_ENUM(RAIL_RadioState_t) {
   RAIL_RF_STATE_IDLE, /**< Radio is idle */
   RAIL_RF_STATE_RX,   /**< Radio is in receive */
   RAIL_RF_STATE_TX,   /**< Radio is in transmit */
-} RAIL_RadioState_t;
+};
 
 /**
  * @enum RAIL_Status_t
  * @brief The available status options
  */
-typedef enum RAIL_Status {
+RAIL_ENUM(RAIL_Status_t) {
   RAIL_STATUS_NO_ERROR, /**< RAIL function reports no error */
   RAIL_STATUS_INVALID_PARAMETER, /**< Call to RAIL function errored because of an invalid parameter */
   RAIL_STATUS_INVALID_STATE, /**< Call to RAIL function errored because called during an invalid radio state */
   RAIL_STATUS_INVALID_CALL, /**< The function is called in an invalid order */
-} RAIL_Status_t;
+};
 
 /**
  * @enum RAIL_RfSenseBand_t
  * @brief Enumeration for specifying Rf Sense frequency band.
  */
-typedef enum {
+RAIL_ENUM(RAIL_RfSenseBand_t) {
   RAIL_RFSENSE_OFF,    /**< RFSense is disabled */
   RAIL_RFSENSE_2_4GHZ, /**< RFSense is in 2.4G band */
   RAIL_RFSENSE_SUBGHZ, /**< RFSense is in subgig band */
   RAIL_RFSENSE_ANY,    /**< RfSense is in both bands */
   RAIL_RFSENSE_MAX     // Must be last
-} RAIL_RfSenseBand_t;
+};
 
 /**
  * @enum RAIL_RfIdleMode_t
  * @brief Enumeration for the different types of idle modes we support. These
  * vary how quickly and destructively we will put the radio into idle.
  */
-typedef enum {
+RAIL_ENUM(RAIL_RfIdleMode_t) {
   /**
    * Idle the radio by turning off receive and canceling any future scheduled
    * receive or transmit operations. This will not abort a receive or
@@ -157,7 +172,7 @@ typedef enum {
    * transmit storage.
    */
   RAIL_IDLE_FORCE_SHUTDOWN_CLEAR_FLAGS
-} RAIL_RfIdleMode_t;
+};
 
 /**
  * @}
@@ -176,36 +191,36 @@ typedef enum {
  * @enum RAIL_TxDataSource_t
  * @brief Transmit data sources supported by RAIL.
  */
-typedef enum{
+RAIL_ENUM(RAIL_TxDataSource_t) {
   TX_PACKET_DATA, /**< Use the frame hardware to packetize data */
-} RAIL_TxDataSource_t;
+};
 
 /**
  * @enum RAIL_RxDataSource_t
  * @brief Receive data sources supported by RAIL.
  */
-typedef enum{
+RAIL_ENUM(RAIL_RxDataSource_t) {
   RX_PACKET_DATA, /**< Use the frame hardware to packetize data */
   RX_DEMOD_DATA, /**< Get 8-bit data output from the demodulator */
   RX_IQDATA_FILTLSB, /**< Get lower 16 bits of I/Q data provided to demodulator */
   RX_IQDATA_FILTMSB /**< Get highest 16 bits of I/Q data provided to demodulator */
-} RAIL_RxDataSource_t;
+};
 
 /**
  * @enum RAIL_DataMethod_t
- * @brief Methods for the application to provide and retreive data from RAIL.
+ * @brief Methods for the application to provide and retrieve data from RAIL.
  */
-typedef enum{
+RAIL_ENUM(RAIL_DataMethod_t) {
   PACKET_MODE, /**< Packet based data method */
   FIFO_MODE, /**< FIFO based data method */
-} RAIL_DataMethod_t;
+};
 
 /**
  * @struct RAIL_DataConfig_t
  * @brief RAIL data configuration structure
  *
  * This structure is used to select the transmit/receive data sources, and the
- * method the application uses to provide/retreive data from RAIL.
+ * method the application uses to provide/retrieve data from RAIL.
  */
 typedef struct {
   RAIL_TxDataSource_t txSource; /**< Source of TX Data */
@@ -257,7 +272,7 @@ typedef struct RAIL_StateTiming {
  * The number of bits set in the mask determines the number of elements in frameLen
  * If your packet does not have frame types but instead are of fixed length, set the mask
  * and offset to 0. RAIL will use the value at frameLen to determine the packet length.
- * If each frame type has a different location for the addres, variableAddrLoc should be True.
+ * If each frame type has a different location for the address, variableAddrLoc should be True.
  */
 typedef struct RAIL_FrameType {
   uint8_t offset; /**< Zero-based location of the frame type field in packet. */
@@ -431,7 +446,7 @@ typedef struct RAIL_AddrConfig {
  * Different APIs use these same constants and may provide more specifics of how
  * they're used but the general philosophy for each is described below.
  */
-typedef enum RAIL_TimeMode {
+RAIL_ENUM(RAIL_TimeMode_t) {
   /**
    * The time specified is an exact time in the RAIL timebase and the given
    * event should happen at exactly that time. If this time is already in the
@@ -440,18 +455,18 @@ typedef enum RAIL_TimeMode {
    * 3/4 of the way into the future to be in the past.
    */
   RAIL_TIME_ABSOLUTE,
- /**
-  * The time specified is relative to now and the event should occur that many
-  * ticks in the future. Delays are only guaranteed to be at least as long as
-  * the value specified. There may be some overhead between when the API is
-  * called and when the delay starts so we _do not_ recommend using this for
-  * operations that must happen at exactly a given time. For that you must use
-  * \ref RAIL_TIME_ABSOLUTE delays.
-  *
-  * Note that if you specify a delay of 0 we will trigger that event as soon as
-  * possible. This is different than specifying an absolute time of now which
-  * would return an error unless it was possible.
-  */
+  /**
+   * The time specified is relative to now and the event should occur that many
+   * ticks in the future. Delays are only guaranteed to be at least as long as
+   * the value specified. There may be some overhead between when the API is
+   * called and when the delay starts so we _do not_ recommend using this for
+   * operations that must happen at exactly a given time. For that you must use
+   * \ref RAIL_TIME_ABSOLUTE delays.
+   *
+   * Note that if you specify a delay of 0 we will trigger that event as soon as
+   * possible. This is different than specifying an absolute time of now which
+   * would return an error unless it was possible.
+   */
   RAIL_TIME_DELAY,
   /**
    * The specified time is invalid and should be ignored. For some APIs this can
@@ -459,7 +474,7 @@ typedef enum RAIL_TimeMode {
    * disabled.
    */
   RAIL_TIME_DISABLED
-} RAIL_TimeMode_t;
+};
 
 /**
  * @}
@@ -536,7 +551,7 @@ typedef struct RAIL_CsmaConfig {
   int8_t   ccaThreshold;
   /**
    * The backoff unit period, in RAIL's microsecond time base.  This is
-   * mulitiplied by the random backoff exponential controlled by @ref
+   * multiplied by the random backoff exponential controlled by @ref
    * csmaMinBoExp and @ref csmaMaxBoExp to determine the overall backoff
    * period. For random backoffs, any value above 511 microseconds will
    * be truncated; for fixed backoffs it can go up to 65535 microseconds.
@@ -559,15 +574,15 @@ typedef struct RAIL_CsmaConfig {
  * @brief RAIL_CsmaConfig_t initializer configuring CSMA per 802.15.4-2003
  * on 2.4 GHz OSPSK, commonly used by ZigBee.
  */
-#define RAIL_CSMA_CONFIG_802_15_4_2003_2p4_GHz_OQPSK_CSMA {                   \
-  /* CSMA per 802.15.4-2003 on 2.4 GHz OSPSK, commonly used by ZigBee      */ \
-  /* csmaMinBoExp */   3, /* 2^3-1 for 0..7 backoffs on 1st try            */ \
-  /* csmaMaxBoExp */   5, /* 2^5-1 for 0..31 backoffs on 3rd+ tries        */ \
-  /* csmaTries    */   5, /* 5 tries overall (4 re-tries)                  */ \
-  /* ccaThreshold */ -75, /* 10 dB above sensitivity                       */ \
-  /* ccaBackoff   */ 320, /* 20 symbols at 16 us/symbol                    */ \
-  /* ccaDuration  */ 128, /* 8 symbols at 16 us/symbol                     */ \
-  /* csmaTimeout  */   0, /* no timeout                                    */ \
+#define RAIL_CSMA_CONFIG_802_15_4_2003_2p4_GHz_OQPSK_CSMA {                    \
+    /* CSMA per 802.15.4-2003 on 2.4 GHz OSPSK, commonly used by ZigBee     */ \
+    /* csmaMinBoExp */ 3,   /* 2^3-1 for 0..7 backoffs on 1st try           */ \
+    /* csmaMaxBoExp */ 5,   /* 2^5-1 for 0..31 backoffs on 3rd+ tries       */ \
+    /* csmaTries    */ 5,   /* 5 tries overall (4 re-tries)                 */ \
+    /* ccaThreshold */ -75, /* 10 dB above sensitivity                      */ \
+    /* ccaBackoff   */ 320, /* 20 symbols at 16 us/symbol                   */ \
+    /* ccaDuration  */ 128, /* 8 symbols at 16 us/symbol                    */ \
+    /* csmaTimeout  */ 0,   /* no timeout                                   */ \
 }
 
 /**
@@ -577,15 +592,15 @@ typedef struct RAIL_CsmaConfig {
  * with custom backoff delays.  User can override ccaBackoff with a fixed
  * delay on each use.
  */
-#define RAIL_CSMA_CONFIG_SINGLE_CCA {                                         \
-  /* Perform a single CCA after 'fixed' delay                              */ \
-  /* csmaMinBoExp */   0, /* Used for fixed backoff                        */ \
-  /* csmaMaxBoExp */   0, /* Used for fixed backoff                        */ \
-  /* csmaTries    */   1, /* Single try                                    */ \
-  /* ccaThreshold */ -75, /* Override if not desired choice                */ \
-  /* ccaBackoff   */   0, /* No backoff (override with fixed value)        */ \
-  /* ccaDuration  */ 128, /* Override if not desired length                */ \
-  /* csmaTimeout  */   0, /* no timeout                                    */ \
+#define RAIL_CSMA_CONFIG_SINGLE_CCA {                                          \
+    /* Perform a single CCA after 'fixed' delay                             */ \
+    /* csmaMinBoExp */ 0,   /* Used for fixed backoff                       */ \
+    /* csmaMaxBoExp */ 0,   /* Used for fixed backoff                       */ \
+    /* csmaTries    */ 1,   /* Single try                                   */ \
+    /* ccaThreshold */ -75, /* Override if not desired choice               */ \
+    /* ccaBackoff   */ 0,   /* No backoff (override with fixed value)       */ \
+    /* ccaDuration  */ 128, /* Override if not desired length               */ \
+    /* csmaTimeout  */ 0,   /* no timeout                                   */ \
 }
 
 /**
@@ -617,7 +632,7 @@ typedef struct RAIL_LbtConfig {
   int8_t   lbtThreshold;
   /**
    * The backoff unit period, in RAIL's microsecond time base.  This is
-   * mulitiplied by the random backoff multiplier controlled by @ref
+   * multiplied by the random backoff multiplier controlled by @ref
    * lbtMinBoRand and @ref lbtMaxBoRand to determine the overall backoff
    * period. For random backoffs, any value above 511 microseconds will
    * be truncated; for fixed backoffs it can go up to 65535 microseconds.
@@ -642,18 +657,18 @@ typedef struct RAIL_LbtConfig {
  * @brief RAIL_LbtConfig_t initializer configuring LBT per ETSI 300 220-1
  * V2.4.1 for a typical Sub-GHz band.  To be practical, user should override
  * lbtTries and/or lbtTimeout so channel access failure will be reported in a
- * reasonable timeframe rather than the unbounded timeframe ETSI defined.
+ * reasonable time frame rather than the unbounded time frame ETSI defined.
  */
-#define RAIL_LBT_CONFIG_ETSI_EN_300_220_1_V2_4_1 {                            \
-  /* LBT per ETSI 300 220-1 V2.4.1                                         */ \
-  /* LBT time = random backoff of 0-5ms in 0.5ms increments plus 5ms fixed */ \
-  /* lbtMinBoRand */     0, /*                                             */ \
-  /* lbtMaxBoRand */    10, /*                                             */ \
-  /* lbtTries     */ RAIL_MAX_LBT_TRIES, /* the maximum supported          */ \
-  /* lbtThreshold */   -87, /*                                             */ \
-  /* lbtBackoff   */   500, /* 0.5 ms                                      */ \
-  /* lbtDuration  */  5000, /* 5 ms                                        */ \
-  /* lbtTimeout   */     0, /* no timeout (recommend user override)        */ \
+#define RAIL_LBT_CONFIG_ETSI_EN_300_220_1_V2_4_1 {                              \
+    /* LBT per ETSI 300 220-1 V2.4.1                                         */ \
+    /* LBT time = random backoff of 0-5ms in 0.5ms increments plus 5ms fixed */ \
+    /* lbtMinBoRand */ 0,    /*                                              */ \
+    /* lbtMaxBoRand */ 10,   /*                                              */ \
+    /* lbtTries     */ RAIL_MAX_LBT_TRIES, /* the maximum supported          */ \
+    /* lbtThreshold */ -87,  /*                                              */ \
+    /* lbtBackoff   */ 500,  /* 0.5 ms                                       */ \
+    /* lbtDuration  */ 5000, /* 5 ms                                         */ \
+    /* lbtTimeout   */ 0,    /* no timeout (recommend user override)         */ \
 }
 
 /**
@@ -708,7 +723,7 @@ typedef struct RAIL_TxPacketInfo {
    * The time is the end of the last bit of the transmitted packet.
    */
   uint32_t timeUs;
- } RAIL_TxPacketInfo_t;
+} RAIL_TxPacketInfo_t;
 
 /**
  * @struct RAIL_TxOptions_t
@@ -721,7 +736,20 @@ typedef struct RAIL_TxOptions {
    * honored if Auto Ack is enabled and if Auto Ack Tx is not paused
    */
   bool waitForAck;
+  /**
+   * Configure if radio should send CRC at the end of the transmit packet. This
+   * should be treated as false by default.
+   */
+  bool removeCrc;
+
+  /**
+   * Indicates which sync word to use for TX
+   */
+  uint8_t syncWordId;
 } RAIL_TxOptions_t;
+
+/** Default is to wait for ack, don't remove CRC, send sync word 0 */
+#define RAIL_TX_OPTIONS_DEFAULTS { false, false, 0 }
 
 /**
  * @}
@@ -764,10 +792,14 @@ typedef struct RAIL_TxOptions {
  *  not known. */
 #define RAIL_RX_CONFIG_PACKET_ABORTED    (0x01 << 10)
 /**
-  * Callback for when the packet has passed any configured address and frame
-  * filtering options.
-  */
+ * Callback for when the packet has passed any configured address and frame
+ * filtering options.
+ */
 #define RAIL_RX_CONFIG_FILTER_PASSED     (0x01 << 11)
+/** Callback for when modem timing is lost */
+#define RAIL_RX_CONFIG_TIMING_LOST       (0x01 << 12)
+/** Callback for when modem timing is detected */
+#define RAIL_RX_CONFIG_TIMING_DETECT     (0x01 << 13)
 
 /** To maintain backwards compatibility with RAIL 1.1,
  * RAIL_RX_CONFIG_INVALID_CRC is the same as RAIL_RX_CONFIG_FRAME_ERROR
@@ -777,8 +809,31 @@ typedef struct RAIL_TxOptions {
 // Rx Option Defines
 /** Option to configure whether the CRC portion of the packet is included in
  *  the dataPtr field of the RAIL_RxPacketInfo_t passed via
- *  RAILCb_RxPacketReceived(). Defaults to false. */
-#define RAIL_RX_OPTION_STORE_CRC    (1 << 0)
+ *  RAILCb_RxPacketReceived(). Defaults to false.
+ */
+#define RAIL_RX_OPTION_STORE_CRC_SHIFT          0
+/** Bitmask corresponding to \ref RAIL_RX_OPTION_STORE_CRC_SHIFT */
+#define RAIL_RX_OPTION_STORE_CRC                (1 << RAIL_RX_OPTION_STORE_CRC_SHIFT)
+
+/**
+ *  Option to configure whether CRC errors will be ignored
+ *  if this is set, RX will still be successful, even if
+ *  the CRC does not pass the check
+ */
+#define RAIL_RX_OPTION_IGNORE_CRC_ERRORS_SHIFT  1
+/** Bitmask corresponding to \ref RAIL_RX_OPTION_IGNORE_CRC_ERRORS_SHIFT */
+#define RAIL_RX_OPTION_IGNORE_CRC_ERRORS        (1 << RAIL_RX_OPTION_IGNORE_CRC_ERRORS_SHIFT)
+
+/**
+ *  Option to configure which out of SYNC0 and SYNC1
+ *  will be sent as the sync word during transmit
+ */
+#define RAIL_RX_OPTION_ENABLE_DUALSYNC_SHIFT    2
+/** Bitmask corresponding to \ref RAIL_RX_OPTION_ENABLE_DUALSYNC_SHIFT */
+#define RAIL_RX_OPTION_ENABLE_DUALSYNC          (1 << RAIL_RX_OPTION_ENABLE_DUALSYNC_SHIFT)
+
+/** Default is don't store CRC, don't ignore CRC errors, and disable dual sync */
+#define RAIL_RX_OPTIONS_DEFAULTS 0
 
 // Rx Config Ignore Error Defines
 /**
@@ -795,7 +850,9 @@ typedef struct RAIL_TxOptions {
  * with \ref RAIL_RX_CONFIG_FRAME_ERROR will not occur. Instead packets with crc
  * errors will generate RAILCb_RxPacketReceived().
  */
-#define RAIL_IGNORE_CRC_ERRORS    (0x01 << 0)
+#define RAIL_IGNORE_CRC_ERRORS_SHIFT    0
+/** Bitmask corresponding to \ref RAIL_RX_OPTION_ENABLE_DUALSYNC_SHIFT */
+#define RAIL_IGNORE_CRC_ERRORS         (0x01 << RAIL_IGNORE_CRC_ERRORS_SHIFT)
 /** Ignore all possible errors. Receive all possible packets */
 #define RAIL_IGNORE_ALL_ERRORS    (0xFF)
 
@@ -819,19 +876,26 @@ typedef struct RAIL_AppendedInfo {
    * Indicates whether the CRC passed or failed for the receive packet. This
    * will be set to 0 for fail and 1 for pass.
    */
-  bool crcStatus:1;
+  bool crcStatus : 1;
   /**
    * Indicates whether frame coding found any errors in the receive packet.
    * This will be set to 0 for fail and 1 for pass.
    */
-  bool frameCodingStatus:1;
+  bool frameCodingStatus : 1;
   /**
    * Indicates if the received packet is an ack. An 'ack' is defined as a
    * packet received during the rx ack window when autoack is enabled.
    * Set to 0 for not an ack, and 1 for is an ack. Will always be 0 if
    * autoack is not enabled.
    */
-  bool isAck:1;
+  bool isAck : 1;
+  /**
+   * In configurations where the radio has the option of receiving a given
+   * packet in multiple ways, this indicates which of the sub-Phy options
+   * was used to receive this packet. Most radio configurations do not have
+   * this ability, and the subPhy is set to 0 in those cases.
+   */
+  uint8_t subPhy : 1;
   /**
    * RSSI of the received packet in integer dBm. This is latched when the sync
    * word is detected for this packet.
@@ -971,7 +1035,7 @@ typedef struct RAIL_AutoAckConfig {
 /**
  * @struct RAIL_AutoAckData_t
  * @brief This structure is used to define the data to use during auto
- * acknowledgement. The data is copied into an RAIL space buffer so after
+ * acknowledgment. The data is copied into an RAIL space buffer so after
  * RAIL_AutoAckLoadBuffer returns, the pointer can be deallocated or reused.
  *
  * Size limited to \ref RAIL_AUTOACK_MAX_LENGTH.
@@ -981,7 +1045,7 @@ typedef struct RAIL_AutoAckData {
   uint8_t dataLength; /**< Number of ack bytes to transmit */
 } RAIL_AutoAckData_t;
 
-/// Acknowledgement packets cannot be longer than 64 bytes.
+/// Acknowledgment packets cannot be longer than 64 bytes.
 #define RAIL_AUTOACK_MAX_LENGTH 64
 /**
  * @}
@@ -999,17 +1063,15 @@ typedef struct RAIL_AutoAckData {
  * @enum RAIL_StreamMode_t
  * @brief Possible stream output modes.
  */
-typedef enum RAIL_StreamMode {
-  PSEUDO_RANDOM_STREAM, /**< Pseudo random stream of bytes */
-  PN9_STREAM            /**< PN9 byte sequence */
-} RAIL_StreamMode_t;
+RAIL_ENUM(RAIL_StreamMode_t) {
+  PN9_STREAM = 1          /**< PN9 byte sequence */
+};
 
 /**
  * @struct RAIL_BerConfig_t
  * @brief BER test parameters.
  */
-typedef struct RAIL_BerConfig
-{
+typedef struct RAIL_BerConfig{
   uint32_t bytesToTest; /**< Number of bytes to test */
 } RAIL_BerConfig_t;
 
@@ -1017,8 +1079,7 @@ typedef struct RAIL_BerConfig
  * @struct RAIL_BerStatus_t
  * @brief The status of the latest bit error rate (BER) test.
  */
-typedef struct RAIL_BerStatus
-{
+typedef struct RAIL_BerStatus{
   uint32_t bitsTotal; /**< Number of bits to receive */
   uint32_t bitsTested; /**< Number of bits currently tested */
   uint32_t bitErrors; /**< Number of bits errors detected */

@@ -7,6 +7,8 @@
 #ifndef __RAIL_IEEE802154_H__
 #define __RAIL_IEEE802154_H__
 
+#include "rail_types.h"
+
 /**
  * @addtogroup Protocol_Specific
  * @{
@@ -72,11 +74,10 @@
  * @enum RAIL_IEEE802154_AddressLength_t
  * @brief Different lengths that an 802.15.4 address can have
  */
-typedef enum RAIL_IEEE802154_AddressLength
-{
+RAIL_ENUM(RAIL_IEEE802154_AddressLength_t) {
   RAIL_IEEE802154_ShortAddress = 2, /**< 2 byte short address. */
   RAIL_IEEE802154_LongAddress = 3, /**< 8 byte extended address. */
-} RAIL_IEEE802154_AddressLength_t;
+};
 
 /**
  * @struct RAIL_IEEE802154_Address_t
@@ -84,14 +85,14 @@ typedef enum RAIL_IEEE802154_AddressLength
  * This structure is only used for a received address, which needs to be parsed
  * to discover the type.
  */
-typedef struct RAIL_IEEE802154_Address
-{
+typedef struct RAIL_IEEE802154_Address{
   /**
    * Enum of the received address length
    */
   RAIL_IEEE802154_AddressLength_t length;
-  union
-  {
+
+  /** Convenient storage for different address types */
+  union {
     uint16_t shortAddress; /**< Present for 2 byte addresses. */
     uint8_t longAddress[8]; /**< Present for 8 byte addresses. */
   };
@@ -103,8 +104,7 @@ typedef struct RAIL_IEEE802154_Address
  * broadcast addresses are handled separately, and do not need to be specified
  * here. Any address which is NULL will be ignored.
  */
-typedef struct RAIL_IEEE802154_AddrConfig
-{
+typedef struct RAIL_IEEE802154_AddrConfig{
   uint16_t panId; /**< PAN ID for destination filtering. */
   uint16_t shortAddr; /**< Network address for destination filtering. */
   uint8_t *longAddr; /**< 64 bit address for destination filtering. In OTA byte order.*/
@@ -313,9 +313,9 @@ RAIL_Status_t RAIL_IEEE802154_SetPromiscuousMode(bool enable);
 
 /// In standard operation, accept BEACON, DATA and COMMAND frames.
 /// Only receive ACK frames while waiting for ack
-#define RAIL_IEEE802154_ACCEPT_STANDARD_FRAMES (RAIL_IEEE802154_ACCEPT_BEACON_FRAMES | \
-                                                RAIL_IEEE802154_ACCEPT_DATA_FRAMES | \
-                                                RAIL_IEEE802154_ACCEPT_COMMAND_FRAMES)
+#define RAIL_IEEE802154_ACCEPT_STANDARD_FRAMES (RAIL_IEEE802154_ACCEPT_BEACON_FRAMES \
+                                                | RAIL_IEEE802154_ACCEPT_DATA_FRAMES \
+                                                | RAIL_IEEE802154_ACCEPT_COMMAND_FRAMES)
 
 /**
  * Set which 802.15.4 frame types to accept
