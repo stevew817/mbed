@@ -617,20 +617,22 @@ static void rf_thread_loop(void) {
         }
 
         if (event.value.signals & SL_RF_RX) {
-            void* rxPacketHandle = rx_handle_queue[rx_handle_index];
-            RAIL_RxPacketInfo_t* rxPacketInfo = (RAIL_RxPacketInfo_t*) memoryPtrFromHandle(rxPacketHandle);
-            tr_debug("rPKT %d\n", rxPacketInfo->dataLength);
-            /* Feed the received packet into the stack */
-            device_driver.phy_rx_cb(rxPacketInfo->dataPtr + 1,
-                                    rxPacketInfo->dataLength - 1,
-                                    //TODO: take a new RAIL release that exposes LQI, or have LQI as function of RSSI
-                                    255,
-                                    rxPacketInfo->appendedInfo.rssiLatch,
-                                    rf_radio_driver_id);
-            memoryFree(rxPacketHandle);
-            size_t prevIdx = rx_handle_index;
-            rx_handle_index = (rx_handle_index + 1) % (sizeof(rx_handle_queue) / sizeof(void*));
-            rx_handle_queue[prevIdx] = NULL;
+            while(rx_handle_queue[rx_handle_index] != NULL) {
+                void* rxPacketHandle = rx_handle_queue[rx_handle_index];
+                RAIL_RxPacketInfo_t* rxPacketInfo = (RAIL_RxPacketInfo_t*) memoryPtrFromHandle(rxPacketHandle);
+                tr_debug("rPKT %d\n", rxPacketInfo->dataLength);
+                /* Feed the received packet into the stack */
+                device_driver.phy_rx_cb(rxPacketInfo->dataPtr + 1,
+                                        rxPacketInfo->dataLength - 1,
+                                        //TODO: take a new RAIL release that exposes LQI, or have LQI as function of RSSI
+                                        255,
+                                        rxPacketInfo->appendedInfo.rssiLatch,
+                                        rf_radio_driver_id);
+                memoryFree(rxPacketHandle);
+                size_t prevIdx = rx_handle_index;
+                rx_handle_index = (rx_handle_index + 1) % (sizeof(rx_handle_queue) / sizeof(void*));
+                rx_handle_queue[prevIdx] = NULL;
+            }
         }
         if (event.value.signals & SL_RF_ACK_RECV) {
             tr_debug("rACK\n");
