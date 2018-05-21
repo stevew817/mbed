@@ -29,9 +29,10 @@ typedef enum {
 
 typedef struct {
     void (*fptr)(uint16_t);
-    uint16_t ticks;
-    uint16_t orderedTime;
-    uint16_t time_drifts;
+    uint32_t overflow_ticks;
+    uint32_t total_time;
+    int8_t id;
+    bool allocated;
 } protocol_timer_t;
 
 extern int protocol_timer_init(void);

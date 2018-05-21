@@ -25,169 +25,124 @@
 
 #define TRACE_GROUP "ctim"
 
-#define PROTOCOL_TIMER_INTERVAL 1000    // 50us units, so we use 50ms
+volatile NS_LARGE protocol_timer_t protocol_timer[PROTOCOL_TIMER_MAX];
+static arm_event_storage_t event[PROTOCOL_TIMER_MAX];
 
-NS_LARGE protocol_timer_t protocol_timer[PROTOCOL_TIMER_MAX];
-int8_t protocol_timer_id = -1;
-bool protocol_tick_handle_busy = false;
-static uint16_t  protocol_tick_update = 0;
 int protocol_timer_init(void)
 {
-    uint8_t i;
-    protocol_timer_id = eventOS_callback_timer_register(protocol_timer_interrupt);
+    size_t i;
     for (i = 0; i < PROTOCOL_TIMER_MAX; i++) {
-        protocol_timer[i].ticks = 0;
-        protocol_timer[i].time_drifts =0;
+        protocol_timer[i].id = -1;
+        protocol_timer[i].overflow_ticks = 0;
+        protocol_timer[i].allocated = false;
+        protocol_timer[i].fptr = NULL;
+
+        event[i].data.data_ptr = NULL;
+        event[i].data.event_type = ARM_IN_PROTOCOL_TIMER_EVENT;
+        event[i].data.event_id = 0;
+        event[i].data.priority = ARM_LIB_HIGH_PRIORITY_EVENT;
     }
-    if (protocol_timer_id >= 0) {
-        eventOS_callback_timer_start(protocol_timer_id, PROTOCOL_TIMER_INTERVAL);
-    }
-    return protocol_timer_id;
+    return 0;
 }
 
 // time is in milliseconds
 void protocol_timer_start(protocol_timer_id_t id, void (*passed_fptr)(uint16_t), uint32_t time)
 {
-    //Check Overflow
-    if (passed_fptr) {
-        if (time > 0x12FFED) {
-            time = 0xffff;
-        }
-        if (time >= 100) {
-            time /= (1000 / 20);
-            //time++;
-        } else {
-            time = 1;
-        }
-        platform_enter_critical();
-        protocol_timer[id].ticks = (uint16_t) time;
+    if(id > PROTOCOL_TIMER_MAX) {
+        tr_err("Out of range protocol timer id\n");
+        return;
+    }
 
-        protocol_timer[id].orderedTime = (uint16_t) time;
-        if (time > 1 && protocol_timer[id].time_drifts >= 50) {
-            protocol_timer[id].ticks--;
-            protocol_timer[id].time_drifts -= 50;
+    if (passed_fptr) {
+        if (protocol_timer[id].allocated == false) {
+            if (protocol_timer[id].id == -1) {
+                int8_t new_id = eventOS_callback_timer_register(protocol_timer_interrupt);
+                if (new_id == -1) {
+                    tr_err("Can't allocate new protocol timer. Check your eventOS memory?\n");
+                    return;
+                }
+                protocol_timer[id].id = new_id;
+            }
+            protocol_timer[id].fptr = passed_fptr;
+            protocol_timer[id].allocated = true;
+            protocol_timer[id].total_time = 0;
+            protocol_timer[id].overflow_ticks = (time * 20) >> 15;
+            eventOS_callback_timer_start(protocol_timer[id].id, (time * 20) & 0x7FFF); // convert ms to slots
+        } else {
+            tr_warn("Trying to restart an already running protocol timer\n");
         }
-        protocol_timer[id].fptr = passed_fptr;
-        platform_exit_critical();
     } else {
-        tr_debug("Do Not use Null pointer for fptr!!!\n");
+        tr_debug("Do Not use Null pointer for fptr!\n");
     }
 }
 
 void protocol_timer_stop(protocol_timer_id_t id)
 {
     platform_enter_critical();
-    protocol_timer[id].ticks = 0;
-    protocol_timer[id].orderedTime = 0;
+    if (id < PROTOCOL_TIMER_MAX) {
+        if (protocol_timer[id].allocated) {
+            eventOS_callback_timer_stop(protocol_timer[id].id);
+            protocol_timer[id].allocated = false;
+        }
+    }
     platform_exit_critical();
 }
 
-
-
 void protocol_timer_sleep_balance(uint32_t time_in_ms)
 {
-    uint8_t i;
-    uint16_t ticks_module;
-    uint16_t time_in50ms_ticks;
-    uint16_t tick_update, tempTimer;
-
-    ticks_module = (time_in_ms % 50);
-    time_in50ms_ticks = (time_in_ms / 50);
-    for (i = 0; i < PROTOCOL_TIMER_MAX; i++) {
-        if (protocol_timer[i].ticks) {
-
-            tick_update = time_in50ms_ticks;
-            protocol_timer[i].time_drifts += ticks_module;
-
-            if (protocol_timer[i].time_drifts >= 50) {
-                protocol_timer[i].time_drifts -= 50;
-            }
-
-            if (protocol_timer[i].ticks <= tick_update) {
-                tempTimer = (tick_update - protocol_timer[i].ticks);
-                tick_update = 1;
-                if (tempTimer >= protocol_timer[i].orderedTime) {
-                    tick_update += (tempTimer / protocol_timer[i].orderedTime);
-                    //time drift
-                    protocol_timer[i].time_drifts += ((tempTimer % protocol_timer[i].orderedTime) *50);
-                }
-
-                protocol_timer[i].ticks = 0;
-                protocol_timer[i].orderedTime = 0;
-                protocol_timer[i].fptr(tick_update);
-
-            } else {
-                protocol_timer[i].ticks -= tick_update;
-            }
-        }
-    }
-
+    // No need to adjust for time here, since we're depending
+    // on our running event timers
+    (void)time_in_ms;
 }
 
 void protocol_timer_event_lock_free(void)
 {
-    platform_enter_critical();
-    protocol_tick_handle_busy = false;
-    platform_exit_critical();
+    // No longer required
 }
 
 
 void protocol_timer_cb(uint16_t ticks)
 {
-    uint8_t i;
-    uint16_t tick_update, tempTimer;
-    for (i = 0; i < PROTOCOL_TIMER_MAX; i++) {
-        if (protocol_timer[i].ticks) {
-            if (protocol_timer[i].ticks <= ticks) {
-                tempTimer = (ticks - protocol_timer[i].ticks);
-
-                tick_update = 1;
-                if (protocol_timer[i].time_drifts >= 50) {
-                    tempTimer++;
-                    protocol_timer[i].time_drifts -= 50;
-                }
-
-                if (tempTimer >= protocol_timer[i].orderedTime) {
-                    tick_update += (tempTimer / protocol_timer[i].orderedTime);
-                    protocol_timer[i].time_drifts += ((tempTimer % protocol_timer[i].orderedTime) *50);
-                }
-
-                protocol_timer[i].ticks = 0;
-                protocol_timer[i].orderedTime = 0;
-                protocol_timer[i].fptr(tick_update);
-
-            } else {
-                protocol_timer[i].ticks -= ticks;
-            }
-        }
+    if (protocol_timer[ticks].fptr) {
+        void (*temp_fptr)(uint16_t) = protocol_timer[ticks].fptr;
+        uint32_t temp_time = protocol_timer[ticks].total_time;
+        protocol_timer[ticks].fptr = NULL;
+        protocol_timer[ticks].total_time = 0;
+        // protocol timer ran originally on a 50ms timer, so need to
+        // report back up using a tick value instead of ms
+        temp_fptr(temp_time / 50);
     }
 }
 
 void protocol_timer_interrupt(int8_t timer_id, uint16_t slots)
 {
-    (void)timer_id;
-    (void)slots;
-    eventOS_callback_timer_start(protocol_timer_id, PROTOCOL_TIMER_INTERVAL);
-    protocol_tick_update++;
+    size_t i;
+    for (i = 0; i < PROTOCOL_TIMER_MAX; i++) {
+        if (protocol_timer[i].id == timer_id) {
+            break;
+        }
+    }
 
-    if (!protocol_tick_handle_busy) {
-        /* This static stuff gets initialised once */
-        static arm_event_storage_t event = {
-            .data = {
-                .data_ptr = NULL,
-                .event_type = ARM_IN_PROTOCOL_TIMER_EVENT,
-                .event_id = 0,
-                .priority = ARM_LIB_HIGH_PRIORITY_EVENT
+    if (i < PROTOCOL_TIMER_MAX) {
+        if (protocol_timer[i].allocated) {
+            // update running time
+            protocol_timer[i].total_time += slots / 20;
+
+            if (protocol_timer[i].overflow_ticks > 0) {
+                // Check if we need to keep running
+                protocol_timer[i].overflow_ticks--;
+                eventOS_callback_timer_start(i, 0x7FFF);
+            } else {
+                // Done with this timer
+                protocol_timer[i].allocated = false;
+                // De-escalate from callback context
+                /* Dynamic stuff */
+                event[i].data.receiver = event[i].data.sender = protocol_read_tasklet_id();
+                event[i].data.event_data = i;
+
+                /* Use user-allocated variant to avoid memory allocation failure */
+                eventOS_event_send_user_allocated(&event[i]);
             }
-        };
-
-        /* Dynamic stuff */
-        event.data.receiver = event.data.sender = protocol_read_tasklet_id();
-        event.data.event_data = protocol_tick_update;
-        protocol_tick_update = 0;
-
-        /* Use user-allocated variant to avoid memory allocation failure */
-        eventOS_event_send_user_allocated(&event);
-        protocol_tick_handle_busy = true;
+        }
     }
 }
