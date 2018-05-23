@@ -82,3 +82,34 @@ uint16_t platform_timer_get_remaining_slots(void)
     }
 }
 
+#ifdef NS_EVENTLOOP_USE_TICK_TIMER
+static LowPowerTicker tick_timer;
+static void (*tick_timer_cbptr)(void);
+
+// EventOS timer callback function
+static void tick_timer_callback(void)
+{
+    if (tick_timer_cbptr != NULL) {
+        tick_timer_cbptr();
+    }
+}
+
+int8_t platform_tick_timer_register(void (*tick_timer_cb)(void))
+{
+    tick_timer_cbptr = tick_timer_cb;
+    return 1;
+}
+
+int8_t platform_tick_timer_start(uint32_t period_ms)
+{
+    tick_timer.detach();
+    tick_timer.attach_us(tick_timer_callback, period_ms*1000);
+    return 0;
+}
+
+int8_t platform_tick_timer_stop(void)
+{
+    tick_timer.detach();
+    return 0;
+}
+#endif // !NS_EVENTLOOP_USE_TICK_TIMER
