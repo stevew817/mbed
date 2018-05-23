@@ -291,33 +291,33 @@ static void rf_thread_loop(const void *arg)
             device_driver.phy_tx_done_cb(rf_radio_driver_id,
                     current_tx_handle,
                     PHY_LINK_TX_SUCCESS,
-                    1,
-                    1);
+                    0,
+                    0);
         } else if (event.value.signals & SL_ACK_RECV) {
             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                     current_tx_handle,
                     (event.value.signals & SL_ACK_PEND) ? PHY_LINK_TX_DONE_PENDING : PHY_LINK_TX_DONE,
-                    1,
-                    1);
+                    0,
+                    0);
         } else if (event.value.signals & SL_ACK_TIMEOUT) {
             waiting_for_ack = false;
             device_driver.phy_tx_done_cb(rf_radio_driver_id,
                     current_tx_handle,
-                    PHY_LINK_TX_FAIL,
+                    PHY_LINK_CCA_FAIL,
                     1,
-                    1);
+                    0);
         } else if(event.value.signals & SL_TX_ERR) {
             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                     current_tx_handle,
-                    PHY_LINK_CCA_FAIL,
-                    8,
-                    1);
+                    PHY_LINK_TX_FAIL,
+                    1,
+                    0);
         } else if(event.value.signals & SL_TX_TIMEOUT) {
             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                     current_tx_handle,
                     PHY_LINK_CCA_FAIL,
-                    8,
-                    1);
+                    1,
+                    0);
         } else if(event.value.signals & SL_CAL_REQ) {
             SL_DEBUG_PRINT("rf_thread_loop: SL_CAL_REQ signal received (unhandled)\n");
         } else if(event.value.signals & SL_RXFIFO_ERR) {
@@ -396,7 +396,7 @@ static int8_t rf_device_register(void)
     }
 #endif
     // Set the output power to the maximum supported by this chip
-    RAIL_SetTxPower(gRailHandle, 255);
+    RAIL_SetTxPower(gRailHandle, RAIL_TX_POWER_LEVEL_HP_MAX);
 
     // Set up PTI since it makes life so much easier
 #if defined(MBED_CONF_SL_RAIL_PTI) && (MBED_CONF_SL_RAIL_PTI == 1)
@@ -922,6 +922,7 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
             case RAIL_EVENT_RX_ACK_TIMEOUT_SHIFT:
                 if(waiting_for_ack) {
                     waiting_for_ack = false;
+                    /*
 #ifdef MBED_CONF_RTOS_PRESENT
                     osSignalSet(rf_thread_id, SL_ACK_TIMEOUT);
 #else
@@ -931,6 +932,7 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                                                   1,
                                                   1);
 #endif
+*/
                 }
                 break;
             /*
