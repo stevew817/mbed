@@ -11,8 +11,8 @@
 #include "platform/arm_hal_interrupt.h"
 #include <mbed_assert.h>
 
-static SingletonPtr<Timer> timer;
-static SingletonPtr<Timeout> timeout;
+static SingletonPtr<LowPowerTimer> timer;
+static SingletonPtr<LowPowerTimeout> timeout;
 
 // If critical sections are implemented using mutexes, timers must be called in thread context, and
 // we use the high-priority event queue for this.
