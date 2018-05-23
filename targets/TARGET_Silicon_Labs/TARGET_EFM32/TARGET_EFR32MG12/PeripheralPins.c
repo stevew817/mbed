@@ -462,7 +462,6 @@ const PinMap PinMap_SPI_CLK[] = {
     {PF4,  SPI_1, 26},
     {PF5,  SPI_1, 27},
     {PF6,  SPI_1, 28},
-    {PF7,  SPI_1, 29},
     {PA0,  SPI_1, 30},
     {PA1,  SPI_1, 31},
 #endif
@@ -480,6 +479,7 @@ const PinMap PinMap_SPI_CLK[] = {
     {PB8,  SPI_2, 9},
     {PB9,  SPI_2, 10},
     {PB10, SPI_2, 11},
+    {PF7,  SPI_2, 18},
     {PF8,  SPI_2, 19},
     {PF9,  SPI_2, 20},
     {PF10, SPI_2, 21},
