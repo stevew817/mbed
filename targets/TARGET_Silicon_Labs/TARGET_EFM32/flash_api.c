@@ -119,7 +119,7 @@ uint32_t flash_get_sector_size(const flash_t *obj, uint32_t address)
 uint32_t flash_get_page_size(const flash_t *obj)
 {
     (void)obj;
-    return FLASH_PAGE_SIZE;
+    return 4;
 }
 
 /** Get start address for the flash region
