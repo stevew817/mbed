@@ -288,9 +288,11 @@ void eventOS_scheduler_set_active_tasklet(int8_t tasklet)
 int eventOS_scheduler_timer_stop(void)
 {
     timer_sys_disable();
+    /*
     if (ns_timer_sleep() != 0) {
         return 1;
     }
+    */
     return 0;
 }
 

@@ -17,6 +17,10 @@
         "event-loop-dispatch-from-application": {
             "help": "Application is responsible of message dispatch loop. Else launch a separate thread for event-loop.",
             "value": false
+        },
+        "event_loop_sleeping_scheduler": {
+            "help": "Define to suppress event timer ticks when idle",
+            "value": null
         }
     }
 }
