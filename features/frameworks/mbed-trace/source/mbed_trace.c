@@ -308,7 +308,9 @@ void mbed_tracef(uint8_t dlevel, const char *grp, const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    mbed_vtracef(dlevel, grp, fmt, ap);
+    if (MBED_TRACE_MAX_LEVEL <= dlevel) {
+        mbed_vtracef(dlevel, grp, fmt, ap);
+    }
     va_end(ap);
 }
 void mbed_vtracef(uint8_t dlevel, const char* grp, const char *fmt, va_list ap)
