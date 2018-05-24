@@ -322,6 +322,8 @@ void ticker_insert_event(const ticker_data_t *const ticker, ticker_event_t *obj,
 
 void ticker_insert_event_us(const ticker_data_t *const ticker, ticker_event_t *obj, us_timestamp_t timestamp, uint32_t id)
 {
+    MBED_ASSERT(obj->next != obj);
+
     core_util_critical_section_enter();
 
     // update the current timestamp
@@ -344,8 +346,9 @@ void ticker_insert_event_us(const ticker_data_t *const ticker, ticker_event_t *o
         prev = p;
         p = p->next;
     }
-    
+
     /* if we're at the end p will be NULL, which is correct */
+    MBED_ASSERT(obj != p);
     obj->next = p;
 
     /* if prev is NULL we're at the head */
