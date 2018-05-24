@@ -352,6 +352,20 @@ static int8_t rf_device_register(void)
 
     SL_DEBUG_PRINT("rf_device_register: entry\n");
 
+    for(uint32_t i = 0; i <= (uint32_t)TRNG0_IRQn; i++) {
+        NVIC_SetPriority((IRQn_Type)i, 4);
+    }
+
+    // radio IRQs need high priority, set to 1
+    NVIC_SetPriority((IRQn_Type)1, 1); //FRC_PRI
+    NVIC_SetPriority((IRQn_Type)4, 1); //FRC
+    NVIC_SetPriority((IRQn_Type)6, 1); //RAC_SEQ
+    NVIC_SetPriority((IRQn_Type)7, 1); //RAC_RSM
+    NVIC_SetPriority((IRQn_Type)5, 1); //MODEM
+    NVIC_SetPriority((IRQn_Type)8, 1); //BUFC
+    NVIC_SetPriority((IRQn_Type)28, 1); //AGC
+    NVIC_SetPriority((IRQn_Type)29, 1); //PROTIMER
+    NVIC_SetPriority((IRQn_Type)33, 1); //RFSENSE
     // Set up RAIL
     // Initialize the RAIL library and any internal state it requires
     gRailHandle = RAIL_Init(&railCfg, &RAILCb_RfReady);
@@ -466,11 +480,6 @@ static int8_t rf_device_register(void)
         radio_state = RADIO_INITING;
     }
 
-#ifdef MBED_CONF_RTOS_PRESENT
-    rx_queue_head = 0;
-    rx_queue_tail = 0;
-    rf_thread_id = osThreadCreate(osThread(rf_thread_loop), NULL);
-#endif
 
     return rf_radio_driver_id;
 }
@@ -755,7 +764,11 @@ static void rf_if_unlock(void)
 
 NanostackRfPhyEfr32::NanostackRfPhyEfr32() : NanostackRfPhy()
 {
-    // Do nothing
+#ifdef MBED_CONF_RTOS_PRESENT
+    rx_queue_head = 0;
+    rx_queue_tail = 0;
+    rf_thread_id = osThreadCreate(osThread(rf_thread_loop), NULL);
+#endif
 }
 
 NanostackRfPhyEfr32::~NanostackRfPhyEfr32()
