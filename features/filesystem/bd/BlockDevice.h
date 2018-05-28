@@ -212,10 +212,19 @@ public:
      */
     bool is_valid_erase(bd_addr_t addr, bd_size_t size) const
     {
-        return (
-            addr % get_erase_size() == 0 &&
-            size % get_erase_size() == 0 &&
-            addr + size <= this->size());
+        if (addr != 0 && addr % get_erase_size() != 0) {
+            return false;
+        }
+
+        if (size % get_erase_size() != 0) {
+            return false;
+        }
+
+        if (addr + size > this->size()) {
+            return false;
+        }
+
+        return true;
     }
 };
 
