@@ -357,6 +357,7 @@ void ticker_insert_event_us(const ticker_data_t *const ticker, ticker_event_t *o
 
     /* if we're at the end p will be NULL, which is correct */
     MBED_ASSERT(obj != p);
+    MBED_ASSERT(obj != prev);
     obj->next = p;
 
     /* if prev is NULL we're at the head */
