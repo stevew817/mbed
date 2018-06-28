@@ -29,7 +29,7 @@ static int (*_rtc_isenabled)(void) = rtc_isenabled;
 static time_t (*_rtc_read)(void) = rtc_read;
 static void (*_rtc_write)(time_t t) = rtc_write;
 
-#elif DEVICE_LPTICKER
+#elif DEVICE_LOWPOWERTIMER
 
 #include "drivers/LowPowerTimer.h"
 
@@ -63,13 +63,13 @@ static int (*_rtc_isenabled)(void) = _rtc_lpticker_isenabled;
 static time_t (*_rtc_read)(void) = _rtc_lpticker_read;
 static void (*_rtc_write)(time_t t) = _rtc_lpticker_write;
 
-#else /* DEVICE_LPTICKER */
+#else /* DEVICE_LOWPOWERTIMER */
 
 static void (*_rtc_init)(void) = NULL;
 static int (*_rtc_isenabled)(void) = NULL;
 static time_t (*_rtc_read)(void) = NULL;
 static void (*_rtc_write)(time_t t) = NULL;
-#endif /* DEVICE_LPTICKER */
+#endif /* DEVICE_LOWPOWERTIMER */
 
 #ifdef __cplusplus
 extern "C" {

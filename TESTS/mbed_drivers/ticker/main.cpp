@@ -18,9 +18,6 @@
 #include "utest/utest.h"
 #include "unity/unity.h"
 
-#if !DEVICE_USTICKER
-#error [NOT_SUPPORTED] test not supported
-#endif
 
 using utest::v1::Case;
 

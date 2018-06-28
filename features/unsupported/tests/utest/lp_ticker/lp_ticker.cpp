@@ -21,7 +21,7 @@
 /* Low power timer test.
  */
 
-#if !DEVICE_LPTICKER
+#if !DEVICE_LOWPOWERTIMER
 #error This test unit requires low power to be defined for a target
 #endif
 

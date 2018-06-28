@@ -19,7 +19,7 @@
 #include "unity/unity.h"
 
 
-#if !DEVICE_LPTICKER
+#if !DEVICE_LOWPOWERTIMER
     #error [NOT_SUPPORTED] Low power ticker not supported for this target
 #endif
 
@@ -33,9 +33,8 @@ static const int test_timeout = 10;
 /* Due to poor accuracy of LowPowerTicker on many platforms
    there is no sense to tune tolerance value as it was in Ticker tests.
 
-   Tolerance value is set to 600us for measurement inaccuracy + 5% tolerance
-   for LowPowerTicker. */
-#define TOLERANCE_US(DELAY) (600 + DELAY / 20)
+   Tolerance value is set to 2000us to cover this diversity */
+#define TOLERANCE_US 2000
 
 
 volatile uint32_t ticker_callback_flag;
@@ -118,7 +117,7 @@ void test_multi_call_time(void)
         while(!ticker_callback_flag);
         time_diff = gtimer.read_us();
 
-        TEST_ASSERT_UINT32_WITHIN(TOLERANCE_US(MULTI_TICKER_TIME_MS * 1000), MULTI_TICKER_TIME_MS * 1000, time_diff);
+        TEST_ASSERT_UINT32_WITHIN(TOLERANCE_US, MULTI_TICKER_TIME_MS * 1000, time_diff);
     }
 }
 
@@ -168,7 +167,7 @@ void test_attach_time(void)
     ticker.detach();
     const int time_diff = gtimer.read_us();
 
-    TEST_ASSERT_UINT64_WITHIN(TOLERANCE_US(DELAY_US), DELAY_US, time_diff);
+    TEST_ASSERT_UINT64_WITHIN(TOLERANCE_US, DELAY_US, time_diff);
 }
 
 /** Test single callback time via attach_us
@@ -190,7 +189,7 @@ void test_attach_us_time(void)
     ticker.detach();
     const int time_diff = gtimer.read_us();
 
-    TEST_ASSERT_UINT64_WITHIN(TOLERANCE_US(DELAY_US), DELAY_US, time_diff);
+    TEST_ASSERT_UINT64_WITHIN(TOLERANCE_US, DELAY_US, time_diff);
 }
 
 // Test cases

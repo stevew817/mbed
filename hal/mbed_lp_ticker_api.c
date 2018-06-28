@@ -15,7 +15,7 @@
  */
 #include "hal/lp_ticker_api.h"
 
-#if DEVICE_LPTICKER
+#if DEVICE_LOWPOWERTIMER
 
 void lp_ticker_set_interrupt_wrapper(timestamp_t timestamp);
 
@@ -28,7 +28,7 @@ static const ticker_interface_t lp_interface = {
     .read = lp_ticker_read,
     .disable_interrupt = lp_ticker_disable_interrupt,
     .clear_interrupt = lp_ticker_clear_interrupt,
-#if LPTICKER_DELAY_TICKS > 0
+#if LOWPOWERTIMER_DELAY_TICKS > 0
     .set_interrupt = lp_ticker_set_interrupt_wrapper,
 #else
     .set_interrupt = lp_ticker_set_interrupt,

@@ -23,10 +23,6 @@
   #error [NOT_SUPPORTED] test not supported
 #endif
 
-#if !DEVICE_USTICKER
-  #error [NOT_SUPPORTED] test not supported
-#endif
-
 using utest::v1::Case;
 
 extern uint32_t mbed_heap_size;

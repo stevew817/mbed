@@ -16,11 +16,7 @@
  */
 
 #if defined(TARGET_CORTEX_A)
-  #error [NOT_SUPPORTED] This function not supported for this target
-#endif
-
-#if !DEVICE_USTICKER
-  #error [NOT_SUPPORTED] test not supported
+    #error [NOT_SUPPORTED] This function not supported for this target
 #endif
 
 #include <stdio.h>

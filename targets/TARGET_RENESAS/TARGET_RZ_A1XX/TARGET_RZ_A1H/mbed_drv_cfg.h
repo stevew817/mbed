@@ -32,6 +32,4 @@
 #define USE_EXTAL_CLK
 //#define USE_RTCX3_CLK
 
-#define RENESAS_RZ_A1_P0_CLK   CM0_RENESAS_RZ_A1_P0_CLK
-
 #endif

@@ -147,23 +147,14 @@ time_t rtc_read(void)
 //******************************************************************************
 void lp_ticker_init(void)
 {
-    RTC_DisableINT(MXC_F_RTC_INTEN_COMP0);
+    if (lp_ticker_inited) {
+        return;
+    }
+
     NVIC_SetVector(RTC0_IRQn, (uint32_t)lp_ticker_irq_handler);
     NVIC_EnableIRQ(RTC0_IRQn);
     init_rtc();
-}
-
-//******************************************************************************
-void lp_ticker_free(void)
-{
-    // Disable interrupt associated with LPTICKER API
-    RTC_DisableINT(MXC_F_RTC_INTEN_COMP0);
-
-    // RTC hardware is shared by LPTICKER and RTC APIs.
-    // Prior initialization of the RTC API gates disabling the RTC hardware.
-    if (!(MXC_RTCTMR->inten & MXC_F_RTC_INTEN_OVERFLOW)) {
-        RTC_Stop();
-    }
+    lp_ticker_inited = 1;
 }
 
 //******************************************************************************
@@ -176,13 +167,13 @@ uint32_t lp_ticker_read(void)
 void lp_ticker_set_interrupt(timestamp_t timestamp)
 {
     MXC_RTCTMR->comp[0] = timestamp;
-    MXC_RTCTMR->flags = MXC_F_RTC_FLAGS_COMP0;
-    RTC_EnableINT(MXC_F_RTC_INTEN_COMP0);
+    MXC_RTCTMR->flags = MXC_F_RTC_FLAGS_ASYNC_CLR_FLAGS;
+    MXC_RTCTMR->inten |= MXC_F_RTC_INTEN_COMP0;
 
-    // Enable as LP wakeup source
-    MXC_PWRSEQ->msk_flags |= MXC_F_PWRSEQ_FLAGS_RTC_CMPR0;
+    // Enable wakeup from RTC compare 0
+    LP_ConfigRTCWakeUp(1, 0, 0, rtc_inited);
 
-    // Postponed write pending wait for comp0 and flags
+    // Wait for pending transactions
     while (MXC_RTCTMR->ctrl & MXC_F_RTC_CTRL_PENDING);
 }
 
@@ -195,7 +186,7 @@ void lp_ticker_disable_interrupt(void)
 //******************************************************************************
 void lp_ticker_clear_interrupt(void)
 {
-    RTC_ClearFlags(MXC_F_RTC_FLAGS_COMP0);
+    RTC_ClearFlags(MXC_F_RTC_FLAGS_ASYNC_CLR_FLAGS);
 }
 
 //******************************************************************************

@@ -21,7 +21,7 @@
  */
 #include "rtos/TARGET_CORTEX/SysTimer.h"
 
-#if DEVICE_LPTICKER
+#if DEVICE_LOWPOWERTIMER
 
 #include "hal/lp_ticker_api.h"
 #include "mbed_critical.h"

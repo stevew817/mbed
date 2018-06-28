@@ -20,11 +20,8 @@
 
 using utest::v1::Case;
 
-#if defined(MBED_RTOS_SINGLE_THREAD)
-  #error [NOT_SUPPORTED] test not supported
-#endif
 
-#if !DEVICE_USTICKER
+#if defined(MBED_RTOS_SINGLE_THREAD)
   #error [NOT_SUPPORTED] test not supported
 #endif
 

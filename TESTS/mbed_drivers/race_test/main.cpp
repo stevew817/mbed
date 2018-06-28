@@ -26,10 +26,6 @@
   #error [NOT_SUPPORTED] test not supported for single threaded enviroment
 #endif
 
-#if !DEVICE_USTICKER
-#error [NOT_SUPPORTED] test not supported
-#endif
-
 using namespace utest::v1;
 
 #define TEST_STACK_SIZE     512
