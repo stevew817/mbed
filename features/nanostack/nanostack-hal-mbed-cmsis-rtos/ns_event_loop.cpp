@@ -35,6 +35,10 @@ static osEventFlagsId_t event_flag_id;
 
 #else
 
+#ifndef MBED_TZ_DEFAULT_ACCESS
+#define MBED_TZ_DEFAULT_ACCESS   0
+#endif
+
 static void event_loop_thread(void *arg);
 
 static uint64_t event_thread_stk[MBED_CONF_NANOSTACK_HAL_EVENT_LOOP_THREAD_STACK_SIZE/8];
@@ -47,6 +51,7 @@ static const osThreadAttr_t event_thread_attr = {
     .stack_mem = &event_thread_stk[0],
     .stack_size = sizeof event_thread_stk,
     .priority = osPriorityNormal,
+    .tz_module = MBED_TZ_DEFAULT_ACCESS,
 };
 #endif
 
