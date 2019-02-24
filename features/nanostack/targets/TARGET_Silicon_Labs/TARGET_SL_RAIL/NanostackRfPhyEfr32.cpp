@@ -24,18 +24,38 @@
 #include "nanostack/platform/arm_hal_phy.h"
 #include "mbed_toolchain.h"
 
+/*******************************************************************************
+ * Enable debug printing with SL_RADIO_DEBUG,
+ * override debug printer with SL_DEBUG_PRINT.
+ ******************************************************************************/
+#ifdef SL_RADIO_DEBUG
 #include "mbed-trace/mbed_trace.h"
 #define  TRACE_GROUP  "SLRF"
 
-/* Enable debug printing with SL_RADIO_DEBUG, override debug printer with SL_DEBUG_PRINT. */
-#ifdef SL_RADIO_DEBUG
 #ifndef SL_DEBUG_PRINT
 #define SL_DEBUG_PRINT(...) tr_debug(__VA_ARGS__)
 #endif
+#ifndef SL_INFO_PRINT
+#define SL_INFO_PRINT(...) tr_info(__VA_ARGS__)
+#endif
+#ifndef SL_WARN_PRINT
+#define SL_WARN_PRINT(...) tr_warn(__VA_ARGS__)
+#endif
 #else
 #define SL_DEBUG_PRINT(...)
+#define SL_INFO_PRINT(...)
+#define SL_WARN_PRINT(...)
 #endif
 
+/*******************************************************************************
+ * Data type constants
+ ******************************************************************************/
+/* 802.15.4 maximum size of a single packet including PHY byte is 128 bytes */
+#define MAC_PACKET_MAX_LENGTH   128
+
+/*******************************************************************************
+ * Definitions for the adaptor thread required to de-escalate from RAIL IRQ.
+ ******************************************************************************/
 /* RF_THREAD_STACK_SIZE defines tack size for the RF adaptor thread */
 #ifndef RF_THREAD_STACK_SIZE
 #define RF_THREAD_STACK_SIZE 1024
@@ -46,14 +66,6 @@
 #define RF_QUEUE_SIZE  8
 #endif
 
-/* 802.15.4 maximum size of a single packet including PHY byte is 128 bytes */
-#define MAC_PACKET_MAX_LENGTH   128
-/* Offsets of prepended data in packet buffer */
-#define MAC_PACKET_OFFSET_RSSI  0
-#define MAC_PACKET_OFFSET_LQI   1
-/* This driver prepends RSSI and LQI */
-#define MAC_PACKET_INFO_LENGTH  2
-
 /* RFThreadSignal used to signal from interrupts to the adaptor thread */
 enum RFThreadSignal {
     SL_RX_DONE          = (1 << 1),
@@ -61,35 +73,31 @@ enum RFThreadSignal {
     SL_TX_ERR           = (1 << 3),
     SL_TX_TIMEOUT       = (1 << 4),
     SL_ACK_RECV         = (1 << 5),
-    SL_ACK_TIMEOUT      = (1 << 6),
-    SL_TXFIFO_ERR       = (1 << 7),
-    SL_RXFIFO_ERR       = (1 << 8),
-    SL_CAL_REQ          = (1 << 9),
-    SL_RSSI_DONE        = (1 << 10),
-    SL_QUEUE_FULL       = (1 << 11),
-
-    // ACK pend flag can be signalled in addition to RX_DONE
-    SL_ACK_PEND         = (1 << 30),
+    SL_ACK_RECV_PD      = (1 << 6),
+    SL_ACK_TIMEOUT      = (1 << 7),
+    SL_TXFIFO_ERR       = (1 << 8),
+    SL_RXFIFO_ERR       = (1 << 9),
+    SL_CAL_REQ          = (1 << 10),
+    SL_RSSI_DONE        = (1 << 11),
 };
+
+typedef enum {
+    RADIO_UNINIT,
+    RADIO_IDLE,
+    RADIO_TX,
+    RADIO_RX,
+    RADIO_CALIBRATION,
+    RADIO_ED
+} siliconlabs_modem_state_t;
 
 /*  Adaptor thread definitions */
 static void rf_thread_loop(const void *arg);
 static osThreadDef(rf_thread_loop, osPriorityRealtime, RF_THREAD_STACK_SIZE);
 static osThreadId rf_thread_id = 0;
 
-/* Queue for passing messages from interrupt to adaptor thread */
-static volatile uint8_t rx_queue[RF_QUEUE_SIZE][MAC_PACKET_MAX_LENGTH + MAC_PACKET_INFO_LENGTH];
-static volatile size_t rx_queue_head = 0;
-static volatile size_t rx_queue_tail = 0;
-
-/* Silicon Labs headers */
-extern "C" {
-    #include "rail/rail.h"
-    #include "rail/pa.h"
-    #include "rail/pti.h"
-    #include "rail/ieee802154/rail_ieee802154.h"
-}
-
+/*******************************************************************************
+ * Nanostack-specific variables & data setup
+ ******************************************************************************/
 /* RF driver data */
 static phy_device_driver_s device_driver;
 static int8_t  rf_radio_driver_id = -1;
@@ -100,7 +108,11 @@ static uint16_t short_address;
 /* Driver instance handle */
 static NanostackRfPhyEfr32 *rf = NULL;
 
-/* Channel configurations */
+/* Channel configurations
+ * This implementation statically advertises both 2.4G and Sub-G 'capabilities'
+ * to Nanostack, but Sub-G may or may not be possible depending on the exact
+ * chip & board in use. If Nanostack requests a channel switch to an unsupported
+ * channel, then this will be reported at runtime. */
 static const phy_rf_channel_configuration_s phy_24ghz = {2405000000U, 5000000U, 250000U, 16U, M_OQPSK};
 static const phy_rf_channel_configuration_s phy_subghz = {868300000U, 2000000U, 250000U, 11U, M_OQPSK};
 
@@ -110,15 +122,20 @@ static const phy_device_channel_page_s phy_channel_pages[] = {
         { CHANNEL_PAGE_0, NULL}
 };
 
-/* Driver structures */
-typedef enum {
-    RADIO_UNINIT,
-    RADIO_INITING,
-    RADIO_IDLE,
-    RADIO_TX,
-    RADIO_RX,
-    RADIO_CALIBRATION
-} siliconlabs_modem_state_t;
+/* ARM_NWK_HAL prototypes */
+static int8_t rf_extension(phy_extension_type_e extension_type, uint8_t *data_ptr);
+static int8_t rf_interface_state_control(phy_interface_state_e new_state, uint8_t rf_channel);
+static int8_t rf_address_write(phy_address_type_e address_type, uint8_t *address_ptr);
+static int8_t rf_start_cca(uint8_t *data_ptr, uint16_t data_length, uint8_t tx_handle, data_protocol_e data_protocol );
+
+/*******************************************************************************
+ * RAIL-specific variables & data setup
+ ******************************************************************************/
+/* Silicon Labs headers */
+extern "C" {
+    #include "rail/rail.h"
+    #include "rail/ieee802154/rail_ieee802154.h"
+}
 
 static const RAIL_CsmaConfig_t csma_config = RAIL_CSMA_CONFIG_802_15_4_2003_2p4_GHz_OQPSK_CSMA;
 
@@ -243,17 +260,11 @@ static volatile bool waiting_for_ack = false;
 static volatile bool data_pending = false, last_ack_pending_bit = false;
 static volatile uint32_t last_tx = 0;
 static volatile RAIL_Handle_t gRailHandle = NULL;
-static uint8_t txFifo[256];
-
-/* ARM_NWK_HAL prototypes */
-static int8_t rf_extension(phy_extension_type_e extension_type, uint8_t *data_ptr);
-static int8_t rf_interface_state_control(phy_interface_state_e new_state, uint8_t rf_channel);
-static int8_t rf_address_write(phy_address_type_e address_type, uint8_t *address_ptr);
-static int8_t rf_start_cca(uint8_t *data_ptr, uint16_t data_length, uint8_t tx_handle, data_protocol_e data_protocol );
+static uint8_t txFifo[MAC_PACKET_MAX_LENGTH * 2];
+static uint8_t rxFifo[RF_QUEUE_SIZE * MAC_PACKET_MAX_LENGTH * 2];
 
 /* Local function prototypes */
 static bool rail_checkAndSwitchChannel(uint8_t channel);
-static void RAILCb_RfReady(RAIL_Handle_t railHandle);
 static void radioEventHandler(RAIL_Handle_t railHandle, RAIL_Events_t events);
 
 static RAIL_Config_t railCfg = { // Must never be const
@@ -262,9 +273,61 @@ static RAIL_Config_t railCfg = { // Must never be const
   .scheduler = NULL, // For MultiProtocol, pointer to a RAIL_SchedConfig_t
 };
 
+static void try_process_rx(void) {
+    /* Try getting a complete RX packet from the radio buffer */
+    RAIL_RxPacketInfo_t rxPacketInfo;
+    RAIL_RxPacketHandle_t rxHandle = RAIL_GetRxPacketInfo(gRailHandle,
+                                                          RAIL_RX_PACKET_HANDLE_OLDEST,
+                                                          &rxPacketInfo);
+
+    while (rxHandle != RAIL_RX_PACKET_HANDLE_INVALID) {
+        switch (rxPacketInfo.packetStatus) {
+            case RAIL_RX_PACKET_READY_SUCCESS:
+                /* Get RSSI and LQI information about this packet */
+                RAIL_RxPacketDetails_t rxPacketDetails;
+                rxPacketDetails.timeReceived.timePosition = RAIL_PACKET_TIME_DEFAULT;
+                rxPacketDetails.timeReceived.totalPacketBytes = 0;
+                RAIL_GetRxPacketDetails(gRailHandle, rxHandle, &rxPacketDetails);
+
+                /* Packet going temporarily onto stack, Nanostack will copy it
+                 * once more. */
+                uint8_t packetBuffer[MAC_PACKET_MAX_LENGTH];
+
+                /* Copy packet payload from circular FIFO into contiguous memory */
+                RAIL_CopyRxPacket(&packetBuffer[0], &rxPacketInfo);
+
+                /* Release RAIL resources early */
+                RAIL_ReleaseRxPacket(gRailHandle, rxHandle);
+
+                SL_INFO_PRINT("rPKT %d", packetBuffer[0] - 2);
+                device_driver.phy_rx_cb(&packetBuffer[1], /* Data payload for Nanostack starts at FCS */
+                                        packetBuffer[0] - 2, /* Payload length is part of frame, but need to subtract CRC bytes */
+                                        (uint8_t)rxPacketDetails.lqi,
+                                        (uint8_t)rxPacketDetails.rssi,
+                                        rf_radio_driver_id);
+                break;
+            case RAIL_RX_PACKET_NONE:
+                // No more messages
+                return;
+            case RAIL_RX_PACKET_RECEIVING:
+                // The oldest packet in the queue hasn't been received yet, so
+                // we're done here.
+                return;
+            default:
+                // Shouldn't have happened, but you never know...
+                SL_WARN_PRINT("Unhandled RX packet: %d", rxPacketInfo.packetStatus);
+                RAIL_ReleaseRxPacket(gRailHandle, rxHandle);
+        }
+
+        rxHandle = RAIL_GetRxPacketInfo(gRailHandle,
+                                        RAIL_RX_PACKET_HANDLE_OLDEST,
+                                        &rxPacketInfo);
+    }
+}
+
 static void rf_thread_loop(const void *arg)
 {
-    SL_DEBUG_PRINT("rf_thread_loop: starting (id: %d)\n", (int)rf_thread_id);
+    SL_DEBUG_PRINT("rf_thread_loop: starting (id: %d)", (int)rf_thread_id);
     for (;;) {
         osEvent event = osSignalWait(0, osWaitForever);
 
@@ -272,65 +335,99 @@ static void rf_thread_loop(const void *arg)
             continue;
         }
 
-        platform_enter_critical();
-
         if (event.value.signals & SL_RX_DONE) {
-            while(rx_queue_tail != rx_queue_head) {
-                uint8_t* packet = (uint8_t*) rx_queue[rx_queue_tail];
-                SL_DEBUG_PRINT("rPKT %d\n", packet[MAC_PACKET_INFO_LENGTH] - 2);
-                device_driver.phy_rx_cb(
-                        &packet[MAC_PACKET_INFO_LENGTH + 1], /* Data payload for Nanostack starts at FCS */
-                        packet[MAC_PACKET_INFO_LENGTH] - 2, /* Payload length is part of frame, but need to subtract CRC bytes */
-                        packet[MAC_PACKET_OFFSET_LQI], /* LQI in second byte */
-                        packet[MAC_PACKET_OFFSET_RSSI], /* RSSI in first byte */
-                        rf_radio_driver_id);
-                rx_queue_tail = (rx_queue_tail + 1) % RF_QUEUE_SIZE;
-            }
+            event.value.signals &= ~SL_RX_DONE;
+            SL_DEBUG_PRINT("rf_thread_loop: RX");
+            try_process_rx();
+        }
 
-        } else if (event.value.signals & SL_TX_DONE) {
+        if (event.value.signals & SL_TX_DONE) {
+            event.value.signals &= ~SL_TX_DONE;
+            SL_DEBUG_PRINT("rf_thread_loop: TX Done");
             device_driver.phy_tx_done_cb(rf_radio_driver_id,
                     current_tx_handle,
                     PHY_LINK_TX_SUCCESS,
                     1,
                     1);
-        } else if (event.value.signals & SL_ACK_RECV) {
+        }
+
+        if (event.value.signals & SL_ACK_RECV) {
+            event.value.signals &= ~SL_ACK_RECV;
+            SL_DEBUG_PRINT("rf_thread_loop: ACK");
             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                     current_tx_handle,
-                    (event.value.signals & SL_ACK_PEND) ? PHY_LINK_TX_DONE_PENDING : PHY_LINK_TX_DONE,
+                    PHY_LINK_TX_DONE,
                     1,
                     1);
-        } else if (event.value.signals & SL_ACK_TIMEOUT) {
-            waiting_for_ack = false;
+        }
+
+        if (event.value.signals & SL_ACK_RECV_PD){
+            event.value.signals &= ~SL_ACK_RECV_PD;
+            SL_DEBUG_PRINT("rf_thread_loop: ACK PD");
+            device_driver.phy_tx_done_cb( rf_radio_driver_id,
+                    current_tx_handle,
+                    PHY_LINK_TX_DONE_PENDING,
+                    1,
+                    1);
+        }
+
+        if (event.value.signals & SL_ACK_TIMEOUT) {
+            event.value.signals &= ~SL_ACK_TIMEOUT;
+            SL_DEBUG_PRINT("rf_thread_loop: ACK timeout");
             device_driver.phy_tx_done_cb(rf_radio_driver_id,
                     current_tx_handle,
                     PHY_LINK_TX_FAIL,
                     1,
                     1);
-        } else if(event.value.signals & SL_TX_ERR) {
-            device_driver.phy_tx_done_cb( rf_radio_driver_id,
-                    current_tx_handle,
-                    PHY_LINK_CCA_FAIL,
-                    8,
-                    1);
-        } else if(event.value.signals & SL_TX_TIMEOUT) {
-            device_driver.phy_tx_done_cb( rf_radio_driver_id,
-                    current_tx_handle,
-                    PHY_LINK_CCA_FAIL,
-                    8,
-                    1);
-        } else if(event.value.signals & SL_CAL_REQ) {
-            SL_DEBUG_PRINT("rf_thread_loop: SL_CAL_REQ signal received (unhandled)\n");
-        } else if(event.value.signals & SL_RXFIFO_ERR) {
-            SL_DEBUG_PRINT("rf_thread_loop: SL_RXFIFO_ERR signal received (unhandled)\n");
-        } else if(event.value.signals & SL_TXFIFO_ERR) {
-            SL_DEBUG_PRINT("rf_thread_loop: SL_TXFIFO_ERR signal received (unhandled)\n");
-        } else if(event.value.signals & SL_QUEUE_FULL) {
-            SL_DEBUG_PRINT("rf_thread_loop: SL_QUEUE_FULL signal received (packet dropped)\n");
-        } else {
-            SL_DEBUG_PRINT("rf_thread_loop unhandled event status: %d value: %d\n", event.status, (int)event.value.signals);
         }
 
-        platform_exit_critical();
+        if(event.value.signals & SL_TX_ERR) {
+            event.value.signals &= ~SL_TX_ERR;
+            SL_DEBUG_PRINT("rf_thread_loop: TX ERR");
+            device_driver.phy_tx_done_cb( rf_radio_driver_id,
+                    current_tx_handle,
+                    PHY_LINK_CCA_FAIL,
+                    8,
+                    1);
+        }
+
+        if(event.value.signals & SL_TX_TIMEOUT) {
+            event.value.signals &= ~SL_TX_TIMEOUT;
+            SL_DEBUG_PRINT("rf_thread_loop: TX timeout");
+            device_driver.phy_tx_done_cb( rf_radio_driver_id,
+                    current_tx_handle,
+                    PHY_LINK_CCA_FAIL,
+                    8,
+                    1);
+        }
+
+        if(event.value.signals & SL_CAL_REQ) {
+            event.value.signals &= ~SL_CAL_REQ;
+            SL_DEBUG_PRINT("rf_thread_loop: calibrating");
+            RAIL_Calibrate(gRailHandle, NULL, RAIL_CAL_ALL_PENDING);
+        }
+
+        if(event.value.signals & SL_RSSI_DONE) {
+            event.value.signals &= ~SL_RSSI_DONE;
+            SL_DEBUG_PRINT("RSSI done (%d)", RAIL_GetAverageRssi(gRailHandle));
+        }
+
+        if(event.value.signals & SL_RXFIFO_ERR) {
+            event.value.signals &= ~SL_RXFIFO_ERR;
+            SL_WARN_PRINT("rf_thread_loop: SL_RXFIFO_ERR signal received (unhandled)");
+        }
+
+        if(event.value.signals & SL_TXFIFO_ERR) {
+            event.value.signals &= ~SL_TXFIFO_ERR;
+            SL_WARN_PRINT("rf_thread_loop: SL_TXFIFO_ERR signal received (unhandled)");
+        }
+
+        if(event.value.signals) {
+            SL_WARN_PRINT("rf_thread_loop unhandled event status: %d value: %d", event.status, (int)event.value.signals);
+        }
+
+        /* Try processing for RX once more to clear potential hiccups */
+        try_process_rx();
     }
 }
 
@@ -350,11 +447,11 @@ static int8_t rf_device_register(void)
         return -1;
     }
 
-    SL_DEBUG_PRINT("rf_device_register: entry\n");
+    SL_DEBUG_PRINT("rf_device_register: entry");
 
     // Set up RAIL
     // Initialize the RAIL library and any internal state it requires
-    gRailHandle = RAIL_Init(&railCfg, &RAILCb_RfReady);
+    gRailHandle = RAIL_Init(&railCfg, NULL);
 
     // Configure calibration settings
     RAIL_ConfigCal(gRailHandle, RAIL_CAL_ALL);
@@ -372,7 +469,9 @@ static int8_t rf_device_register(void)
 #endif
 
     // Enable 802.15.4 acceleration features
-    RAIL_IEEE802154_Init(gRailHandle, &config);
+    if (RAIL_IEEE802154_Init(gRailHandle, &config) != RAIL_STATUS_NO_ERROR) {
+        MBED_ERROR(MBED_ERROR_UNSUPPORTED, "This chip does not support 802.15.4");
+    }
 
     // Fire all events by default
     RAIL_ConfigEvents(gRailHandle,
@@ -381,22 +480,22 @@ static int8_t rf_device_register(void)
 
     // Setup the transmit buffer
     RAIL_SetTxFifo(gRailHandle, txFifo, 0, sizeof(txFifo));
+    uint16_t rxSize = sizeof(rxFifo);
+    RAIL_SetRxFifo(gRailHandle, rxFifo, &rxSize);
 
 #if MBED_CONF_SL_RAIL_BAND == 2400
     if (RAIL_ConfigTxPower(gRailHandle, &paInit2p4) != RAIL_STATUS_NO_ERROR) {
-        // Error: The PA could not be initialized due to an improper configuration.
-        // Please ensure your configuration is valid for the selected part.
-        while (1) ;
+        MBED_ERROR(MBED_ERROR_UNSUPPORTED, "The PA could not be initialized due to an improper configuration");
     }
 #elif (MBED_CONF_SL_RAIL_BAND == 915) || (MBED_CONF_SL_RAIL_BAND == 868)
     if (RAIL_ConfigTxPower(gRailHandle, &paInitSubGhz) != RAIL_STATUS_NO_ERROR) {
-        // Error: The PA could not be initialized due to an improper configuration.
-        // Please ensure your configuration is valid for the selected part.
-        while (1) ;
+        MBED_ERROR(MBED_ERROR_UNSUPPORTED, "The PA could not be initialized due to an improper configuration");
     }
 #endif
     // Set the output power to the maximum supported by this chip
-    RAIL_SetTxPower(gRailHandle, 255);
+    if (RAIL_SetTxPowerDbm(gRailHandle, RAIL_TX_POWER_MAX) != RAIL_STATUS_NO_ERROR) {
+        MBED_ERROR(MBED_ERROR_UNSUPPORTED, "The PA power could not be set");
+    }
 
     // Set up PTI since it makes life so much easier
 #if defined(MBED_CONF_SL_RAIL_PTI) && (MBED_CONF_SL_RAIL_PTI == 1)
@@ -415,9 +514,9 @@ static int8_t rf_device_register(void)
     };
 
     // Initialize the Packet Trace Interface (PTI) for the EFR32
-    RAIL_ConfigPti(RAIL_EFR32_HANDLE, &ptiConfig);
+    RAIL_ConfigPti(gRailHandle, &ptiConfig);
     // Enable Packet Trace (PTI)
-    RAIL_EnablePti(RAIL_EFR32_HANDLE, true);
+    RAIL_EnablePti(gRailHandle, true);
 #endif
 
     /* Get real MAC address */
@@ -461,14 +560,9 @@ static int8_t rf_device_register(void)
     /*Register device driver*/
     rf_radio_driver_id = arm_net_phy_register(&device_driver);
 
-    // If the radio hasn't called the ready callback by now, place it in the initing state
-    if(radio_state == RADIO_UNINIT) {
-        radio_state = RADIO_INITING;
-    }
+    radio_state = RADIO_IDLE;
 
 #ifdef MBED_CONF_RTOS_PRESENT
-    rx_queue_head = 0;
-    rx_queue_tail = 0;
     rf_thread_id = osThreadCreate(osThread(rf_thread_loop), NULL);
 #endif
 
@@ -504,38 +598,28 @@ static int8_t rf_start_cca(uint8_t *data_ptr, uint16_t data_length, uint8_t tx_h
 {
     switch(radio_state) {
     case RADIO_UNINIT:
-        SL_DEBUG_PRINT("rf_start_cca: Radio uninit\n");
-        return -1;
-    case RADIO_INITING:
-        SL_DEBUG_PRINT("rf_start_cca: Radio initing\n");
+        SL_WARN_PRINT("Trying to send with uninitialized radio");
         return -1;
     case RADIO_CALIBRATION:
-        SL_DEBUG_PRINT("rf_start_cca: Radio calibrating\n");
+        SL_DEBUG_PRINT("Trying to send while calibrating");
+        return -1;
+    case RADIO_ED:
+        SL_WARN_PRINT("Trying to send while in energy detecting mode");
         return -1;
     case RADIO_TX:
-        SL_DEBUG_PRINT("rf_start_cca: Radio in TX mode\n");
+        SL_WARN_PRINT("Trying to send while still sending");
         return -1;
     case RADIO_IDLE:
     case RADIO_RX:
         // If we're still waiting for an ACK, don't mess up the internal state
         if(waiting_for_ack || RAIL_GetRadioState(gRailHandle) == RAIL_RF_STATE_TX) {
             if((RAIL_GetTime() - last_tx) < 30000) {
-                SL_DEBUG_PRINT("rf_start_cca: Still waiting on previous ACK\n");
+                SL_WARN_PRINT("Trying to send while waiting on previous ACK");
                 return -1;
             } else {
-                SL_DEBUG_PRINT("rf_start_cca: TXerr\n");
+                SL_DEBUG_PRINT("Assuming ACK timed out");
             }
         }
-
-        platform_enter_critical();
-
-        /* Since we set up Nanostack to give us a 1-byte PHY header, we get the one extra byte at the start of data_ptr
-         * and need to populate it with the MAC-frame length byte (including the 2-byte hardware-inserted CRC) */
-        data_ptr[0] = data_length + 2;
-
-        RAIL_Idle(gRailHandle, RAIL_IDLE_ABORT, true);
-        RAIL_WriteTxFifo(gRailHandle, data_ptr, data_length + 1, true);
-        radio_state = RADIO_TX;
 
         RAIL_TxOptions_t txOpt = RAIL_TX_OPTIONS_DEFAULT;
         //Check to see whether we'll be waiting for an ACK
@@ -546,7 +630,17 @@ static int8_t rf_start_cca(uint8_t *data_ptr, uint16_t data_length, uint8_t tx_h
             waiting_for_ack = false;
         }
 
-        SL_DEBUG_PRINT("rf_start_cca: Called TX, len %d, chan %d, ack %d\n", data_length, channel, waiting_for_ack ? 1 : 0);
+        SL_INFO_PRINT("Transmitting len %d, chan %d, ack %d", data_length, channel, waiting_for_ack ? 1 : 0);
+
+        platform_enter_critical();
+
+        /* Since we set up Nanostack to give us a 1-byte PHY header, we get the one extra byte at the start of data_ptr
+         * and need to populate it with the MAC-frame length byte (including the 2-byte hardware-inserted CRC) */
+        data_ptr[0] = data_length + 2;
+
+        RAIL_Idle(gRailHandle, RAIL_IDLE_ABORT, true);
+        RAIL_WriteTxFifo(gRailHandle, data_ptr, data_length + 1, true);
+        radio_state = RADIO_TX;
 
         if(RAIL_StartCcaCsmaTx(gRailHandle, channel, txOpt, &csma_config, NULL) == 0) {
           //Save packet number and sequence
@@ -615,7 +709,7 @@ static int8_t rf_interface_state_control(phy_interface_state_e new_state, uint8_
             break;
         /* Enable wireless interface ED scan mode */
         case PHY_INTERFACE_RX_ENERGY_STATE:
-            SL_DEBUG_PRINT("rf_interface_state_control: Energy det req\n");
+            SL_WARN_PRINT("Unimplemented Energy Detection");
             // TODO: implement energy detection
             break;
         /* Enable RX in promiscuous mode (aka no address filtering) */
@@ -678,15 +772,15 @@ static int8_t rf_extension(phy_extension_type_e extension_type, uint8_t *data_pt
         /* Read status of the link */
         case PHY_EXTENSION_READ_LINK_STATUS:
             // TODO: return accurate value here
-            SL_DEBUG_PRINT("rf_extension: Trying to read link status\n");
+            SL_WARN_PRINT("Unimplemented: Trying to read link status");
             break;
         /* Convert between LQI and RSSI */
         case PHY_EXTENSION_CONVERT_SIGNAL_INFO:
             // TODO: return accurate value here
-            SL_DEBUG_PRINT("rf_extension: Trying to read signal info\n");
+            SL_WARN_PRINT("Unimplemented: Trying to read signal info");
             break;
         case PHY_EXTENSION_ACCEPT_ANY_BEACON:
-            SL_DEBUG_PRINT("rf_extension: Trying to accept any beacon\n");
+            SL_WARN_PRINT("Unimplemented: Trying to accept any beacon");
             break;
     }
     return 0;
@@ -718,7 +812,6 @@ static int8_t rf_address_write(phy_address_type_e address_type, uint8_t *address
             for(unsigned int i = 0; i < sizeof(MAC_address); i ++) {
                 SL_DEBUG_PRINT("%02x:", MAC_address[i]);
             }
-            SL_DEBUG_PRINT("\n");
             /* Pass MAC to the RF driver in LSB order */
             uint8_t MAC_reversed[8];
             for(unsigned int i = 0; i < sizeof(MAC_address); i ++) {
@@ -729,11 +822,13 @@ static int8_t rf_address_write(phy_address_type_e address_type, uint8_t *address
         /*Set 16-bit address*/
         case PHY_MAC_16BIT:
             short_address = address_ptr[0] << 8 | address_ptr[1];
+            SL_DEBUG_PRINT("Set short ID %d", short_address);
             RAIL_IEEE802154_SetShortAddress(gRailHandle, short_address, 0);
             break;
         /*Set PAN Id*/
         case PHY_MAC_PANID:
             PAN_address = address_ptr[0] << 8 | address_ptr[1];
+            SL_DEBUG_PRINT("Set PAN ID %d", PAN_address);
             RAIL_IEEE802154_SetPanId(gRailHandle, PAN_address, 0);
             break;
     }
@@ -742,17 +837,6 @@ static int8_t rf_address_write(phy_address_type_e address_type, uint8_t *address
 
 /*****************************************************************************/
 /*****************************************************************************/
-
-static void rf_if_lock(void)
-{
-    platform_enter_critical();
-}
-
-static void rf_if_unlock(void)
-{
-    platform_exit_critical();
-}
-
 NanostackRfPhyEfr32::NanostackRfPhyEfr32() : NanostackRfPhy()
 {
     // Do nothing
@@ -766,10 +850,10 @@ NanostackRfPhyEfr32::~NanostackRfPhyEfr32()
 int8_t NanostackRfPhyEfr32::rf_register()
 {
 
-    rf_if_lock();
+    platform_enter_critical();
 
     if (rf != NULL) {
-        rf_if_unlock();
+        platform_exit_critical();
         error("Multiple registrations of NanostackRfPhyEfr32 not supported");
         return -1;
     }
@@ -781,47 +865,47 @@ int8_t NanostackRfPhyEfr32::rf_register()
         rf = this;
     }
 
-    rf_if_unlock();
+    platform_exit_critical();
     return radio_id;
 }
 
 void NanostackRfPhyEfr32::rf_unregister()
 {
-    rf_if_lock();
+    platform_enter_critical();
 
     if (rf != this) {
-        rf_if_unlock();
+        platform_exit_critical();
         return;
     }
 
     rf_device_unregister();
     rf = NULL;
 
-    rf_if_unlock();
+    platform_exit_critical();
 }
 
 void NanostackRfPhyEfr32::get_mac_address(uint8_t *mac)
 {
-    rf_if_lock();
+    platform_enter_critical();
 
     memcpy(mac, MAC_address, sizeof(MAC_address));
 
-    rf_if_unlock();
+    platform_exit_critical();
 }
 
 void NanostackRfPhyEfr32::set_mac_address(uint8_t *mac)
 {
-    rf_if_lock();
+    platform_enter_critical();
 
     if (NULL != rf) {
         error("NanostackRfPhyEfr32 cannot change mac address when running");
-        rf_if_unlock();
+        platform_exit_critical();
         return;
     }
 
     memcpy(MAC_address, mac, sizeof(MAC_address));
 
-    rf_if_unlock();
+    platform_exit_critical();
 }
 
 uint32_t NanostackRfPhyEfr32::get_driver_version()
@@ -837,15 +921,6 @@ uint32_t NanostackRfPhyEfr32::get_driver_version()
 
 
 //====================== RAIL-defined callbacks =========================
-/**
- * Callback that lets the app know when the radio has finished init
- * and is ready.
- */
-static void RAILCb_RfReady(RAIL_Handle_t handle) {
-    (void) handle;
-    radio_state = RADIO_IDLE;
-}
-
 /**
  * Function to check the requested channel against the current channel,
  * and change the radio configuration if necessary.
@@ -911,7 +986,7 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
 #ifdef MBED_CONF_RTOS_PRESENT
                 osSignalSet(rf_thread_id, SL_RSSI_DONE);
 #else
-                SL_DEBUG_PRINT("RSSI done (%d)\n", RAIL_GetAverageRssi(gRailHandle));
+                SL_DEBUG_PRINT("RSSI done (%d)", RAIL_GetAverageRssi(gRailHandle));
 #endif
                 break;
             /*
@@ -942,7 +1017,7 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
 #ifdef MBED_CONF_RTOS_PRESENT
                 osSignalSet(rf_thread_id, SL_RXFIFO_ERR);
 #else
-                SL_DEBUG_PRINT("RX near full (%d)\n", RAIL_GetRxFifoBytesAvailable(gRailHandle));
+                SL_DEBUG_PRINT("RX near full (%d)", RAIL_GetRxFifoBytesAvailable(gRailHandle));
 #endif
                 break;
             /*
@@ -973,8 +1048,6 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                         if( (header[0] == 5) &&
                             (header[3] == current_tx_sequence)  &&
                             waiting_for_ack) {
-                            /* Tell the radio to not ACK an ACK */
-                            RAIL_CancelAutoAck(gRailHandle);
                             waiting_for_ack = false;
                             /* Save the pending bit */
                             last_ack_pending_bit = (header[1] & (1 << 4)) != 0;
@@ -982,9 +1055,13 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                             RAIL_ReleaseRxPacket(gRailHandle, rxHandle);
                             /* Tell the stack we got an ACK */
 #ifdef MBED_CONF_RTOS_PRESENT
-                            osSignalSet(rf_thread_id, SL_ACK_RECV | (last_ack_pending_bit ? SL_ACK_PEND : 0));
+                            if (last_ack_pending_bit) {
+                                osSignalSet(rf_thread_id, SL_ACK_RECV_PD);
+                            } else {
+                                osSignalSet(rf_thread_id, SL_ACK_RECV);
+                            }
 #else
-                            SL_DEBUG_PRINT("rACK\n");
+                            SL_DEBUG_PRINT("rACK");
                             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                                                           current_tx_handle,
                                                           last_ack_pending_bit ? PHY_LINK_TX_DONE_PENDING : PHY_LINK_TX_DONE,
@@ -992,58 +1069,30 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                                                           1);
 #endif
                         } else {
+#ifdef MBED_CONF_RTOS_PRESENT
+                            RAIL_HoldRxPacket(gRailHandle);
+                            osSignalSet(rf_thread_id, SL_RX_DONE);
+#else
                             /* Get RSSI and LQI information about this packet */
                             RAIL_RxPacketDetails_t rxPacketDetails;
                             rxPacketDetails.timeReceived.timePosition = RAIL_PACKET_TIME_DEFAULT;
                             rxPacketDetails.timeReceived.totalPacketBytes = 0;
                             RAIL_GetRxPacketDetails(gRailHandle, rxHandle, &rxPacketDetails);
 
-#ifdef MBED_CONF_RTOS_PRESENT
-                            /* Drop this packet if we're out of space */
-                            if (((rx_queue_head + 1) % RF_QUEUE_SIZE) == rx_queue_tail) {
-                                osSignalSet(rf_thread_id, SL_QUEUE_FULL);
-                                RAIL_ReleaseRxPacket(gRailHandle, rxHandle);
-                                break;
-                            }
-
-                            /* Copy into queue */
-                            uint8_t* packetBuffer = (uint8_t*)rx_queue[rx_queue_head];
-#else
                             /* Packet going temporarily onto stack for bare-metal apps */
-                            uint8_t packetBuffer[MAC_PACKET_MAX_LENGTH + MAC_PACKET_INFO_LENGTH];
-#endif
-                            /* First two bytes are RSSI and LQI, respecitvely */
-                            packetBuffer[MAC_PACKET_OFFSET_RSSI] = (uint8_t)rxPacketDetails.rssi;
-                            packetBuffer[MAC_PACKET_OFFSET_LQI] = (uint8_t)rxPacketDetails.lqi;
+                            uint8_t packetBuffer[MAC_PACKET_MAX_LENGTH];
 
                             /* Copy packet payload from circular FIFO into contiguous memory */
-                            RAIL_CopyRxPacket(&packetBuffer[MAC_PACKET_INFO_LENGTH], &rxPacketInfo);
+                            RAIL_CopyRxPacket(&packetBuffer[0], &rxPacketInfo);
 
                             /* Release RAIL resources early */
                             RAIL_ReleaseRxPacket(gRailHandle, rxHandle);
 
-                            /* Figure out whether we want to not ACK this packet */
-
-                            /*
-                            * packetBuffer[0] = length
-                            * dataLength = length w/o length byte
-                            * packetBuffer[1:2] = 0x61C9 -> 0b01100001 0b1100 1001 (version 1, dest 3, src 2, ACKreq, type = 1)
-                            *   [1] => b[0:2] frame type, b[3] = security enabled, b[4] = frame pending, b[5] = ACKreq, b[6] = intrapan
-                            *   [2] => b[2:3] destmode, b[4:5] version, b[6:7] srcmode
-                            */
-                            if( (packetBuffer[MAC_PACKET_INFO_LENGTH + 1] & (1 << 5)) == 0 ) {
-                                /* Cancel the ACK if the sender did not request one */
-                                RAIL_CancelAutoAck(gRailHandle);
-                            }
-#ifdef MBED_CONF_RTOS_PRESENT
-                            rx_queue_head = (rx_queue_head + 1) % RF_QUEUE_SIZE;
-                            osSignalSet(rf_thread_id, SL_RX_DONE);
-#else
-                            SL_DEBUG_PRINT("rPKT %d\n", packetBuffer[MAC_PACKET_INFO_LENGTH] - 2);
-                            device_driver.phy_rx_cb(&packetBuffer[MAC_PACKET_INFO_LENGTH + 1], /* Data payload for Nanostack starts at FCS */
-                                                    packetBuffer[MAC_PACKET_INFO_LENGTH] - 2, /* Payload length is part of frame, but need to subtract CRC bytes */
-                                                    packetBuffer[MAC_PACKET_OFFSET_LQI], /* LQI in second byte */
-                                                    packetBuffer[MAC_PACKET_OFFSET_RSSI], /* RSSI in first byte */
+                            SL_DEBUG_PRINT("rPKT %d", packetBuffer[0] - 2);
+                            device_driver.phy_rx_cb(&packetBuffer[1], /* Data payload for Nanostack starts at FCS */
+                                                    packetBuffer[0] - 2, /* Payload length is part of frame, but need to subtract CRC bytes */
+                                                    (uint8_t)rxPacketDetails.lqi,
+                                                    (uint8_t)rxPacketDetails.rssi,
                                                     rf_radio_driver_id);
 #endif
                         }
@@ -1128,7 +1177,7 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
 #ifdef MBED_CONF_RTOS_PRESENT
                 osSignalSet(rf_thread_id, SL_TXFIFO_ERR);
 #else
-                SL_DEBUG_PRINT("TX near empty (%d)\n", spaceAvailable);
+                SL_DEBUG_PRINT("TX near empty (%d)", spaceAvailable);
 #endif
                 break;
             /*
@@ -1166,6 +1215,8 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                 break;
             /* Occurs when a TX is aborted by the user */
             case RAIL_EVENT_TX_ABORTED_SHIFT:
+                waiting_for_ack = false;
+                radio_state = RADIO_RX;
 #ifdef MBED_CONF_RTOS_PRESENT
                 osSignalSet(rf_thread_id, SL_TX_TIMEOUT);
 #else
@@ -1175,14 +1226,14 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                                               8,
                                               1);
 #endif
-                waiting_for_ack = false;
-                radio_state = RADIO_RX;
                 break;
             /* Occurs when a TX ACK is aborted by the user */
             case RAIL_EVENT_TXACK_ABORTED_SHIFT:
                 break;
             /* Occurs when a TX is blocked by something like PTA or RHO */
             case RAIL_EVENT_TX_BLOCKED_SHIFT:
+                waiting_for_ack = false;
+                radio_state = RADIO_RX;
 #ifdef MBED_CONF_RTOS_PRESENT
                 osSignalSet(rf_thread_id, SL_TX_TIMEOUT);
 #else
@@ -1192,14 +1243,14 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                                               8,
                                               1);
 #endif
-                waiting_for_ack = false;
-                radio_state = RADIO_RX;
                 break;
             /* Occurs when a TX ACK is blocked by something like PTA or RHO */
             case RAIL_EVENT_TXACK_BLOCKED_SHIFT:
                 break;
             /* Occurs when the TX buffer underflows */
             case RAIL_EVENT_TX_UNDERFLOW_SHIFT:
+                waiting_for_ack = false;
+                radio_state = RADIO_RX;
 #ifdef MBED_CONF_RTOS_PRESENT
                 osSignalSet(rf_thread_id, SL_TX_TIMEOUT);
 #else
@@ -1209,17 +1260,18 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                                               8,
                                               1);
 #endif
-                waiting_for_ack = false;
-                radio_state = RADIO_RX;
                 break;
             /* Occurs when the buffer used for TX acking underflows */
             case RAIL_EVENT_TXACK_UNDERFLOW_SHIFT:
+                MBED_ERROR(MBED_ERROR_UNDERFLOW, "TX ACK underflow");
                 break;
             /* Occurs when CCA/CSMA/LBT succeeds */
             case RAIL_EVENT_TX_CHANNEL_CLEAR_SHIFT:
                 break;
             /* Occurs when CCA/CSMA/LBT fails */
             case RAIL_EVENT_TX_CHANNEL_BUSY_SHIFT:
+                waiting_for_ack = false;
+                radio_state = RADIO_RX;
 #ifdef MBED_CONF_RTOS_PRESENT
                 osSignalSet(rf_thread_id, SL_TX_TIMEOUT);
 #else
@@ -1229,8 +1281,6 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                                               8,
                                               1);
 #endif
-                waiting_for_ack = false;
-                radio_state = RADIO_RX;
                 break;
             /* Occurs when a CCA check is being retried */
             case RAIL_EVENT_TX_CCA_RETRY_SHIFT:
@@ -1263,7 +1313,7 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
 #ifdef MBED_CONF_RTOS_PRESENT
                 osSignalSet(rf_thread_id, SL_CAL_REQ);
 #else
-                SL_DEBUG_PRINT("!!!! Calling for calibration\n");
+                RAIL_Calibrate(gRailHandle, NULL, RAIL_CAL_ALL_PENDING);
 #endif
                 break;
             default:
