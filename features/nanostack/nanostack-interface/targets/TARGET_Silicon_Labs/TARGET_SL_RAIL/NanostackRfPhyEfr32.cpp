@@ -273,6 +273,9 @@ static RAIL_Config_t railCfg = { // Must never be const
     .scheduler = NULL, // For MultiProtocol, pointer to a RAIL_SchedConfig_t
 };
 
+/*******************************************************************************
+ * De-escalation thread
+ ******************************************************************************/
 static void try_process_rx(void) {
     /* Try getting a complete RX packet from the radio buffer */
     RAIL_RxPacketInfo_t rxPacketInfo;
@@ -833,8 +836,9 @@ static int8_t rf_address_write(phy_address_type_e address_type, uint8_t *address
     return ret_val;
 }
 
-/*****************************************************************************/
-/*****************************************************************************/
+/*******************************************************************************
+ * NanostackRfPhy object boilerplate
+ ******************************************************************************/
 NanostackRfPhyEfr32::NanostackRfPhyEfr32() : NanostackRfPhy()
 {
     // Do nothing
@@ -855,7 +859,6 @@ int8_t NanostackRfPhyEfr32::rf_register()
         error("Multiple registrations of NanostackRfPhyEfr32 not supported");
         return -1;
     }
-
     int8_t radio_id = rf_device_register();
     if (radio_id < 0) {
         rf = NULL;
@@ -884,6 +887,8 @@ void NanostackRfPhyEfr32::rf_unregister()
 
 void NanostackRfPhyEfr32::get_mac_address(uint8_t *mac)
 {
+    SL_WARN_PRINT("Starting radio with driver version %08x", get_driver_version());
+
     platform_enter_critical();
 
     memcpy(mac, MAC_address, sizeof(MAC_address));
@@ -906,6 +911,12 @@ void NanostackRfPhyEfr32::set_mac_address(uint8_t *mac)
     platform_exit_critical();
 }
 
+NanostackRfPhy &NanostackRfPhy::get_default_instance()
+{
+    static NanostackRfPhyEfr32 rf_phy;
+    return rf_phy;
+}
+
 uint32_t NanostackRfPhyEfr32::get_driver_version()
 {
     RAIL_Version_t railversion;
@@ -917,8 +928,6 @@ uint32_t NanostackRfPhyEfr32::get_driver_version()
            (railversion.build);
 }
 
-
-//====================== RAIL-defined callbacks =========================
 /**
  * Function to check the requested channel against the current channel,
  * and change the radio configuration if necessary.
@@ -952,6 +961,9 @@ static bool rail_checkAndSwitchChannel(uint8_t newChannel)
     }
 }
 
+/*******************************************************************************
+ * IRQ (event) handling
+ ******************************************************************************/
 /**
  * Event handler for RAIL-fired events. Usually gets called from IRQ context.
  * Due to IRQ latency and tailchaining, multiple event flags might be set simultaneously,
@@ -1322,10 +1334,4 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
         events = events >> 1;
         index += 1;
     } while (events != 0);
-}
-
-NanostackRfPhy &NanostackRfPhy::get_default_instance()
-{
-    static NanostackRfPhyEfr32 rf_phy;
-    return rf_phy;
 }
