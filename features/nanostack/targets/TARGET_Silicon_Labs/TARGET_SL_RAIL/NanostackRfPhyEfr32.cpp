@@ -351,7 +351,7 @@ static void rf_thread_loop(const void *arg)
                     current_tx_handle,
                     PHY_LINK_TX_SUCCESS,
                     1,
-                    1);
+                    0);
         }
 
         if (event.value.signals & SL_ACK_RECV) {
@@ -361,7 +361,7 @@ static void rf_thread_loop(const void *arg)
                     current_tx_handle,
                     PHY_LINK_TX_DONE,
                     1,
-                    1);
+                    0);
         }
 
         if (event.value.signals & SL_ACK_RECV_PD){
@@ -371,7 +371,7 @@ static void rf_thread_loop(const void *arg)
                     current_tx_handle,
                     PHY_LINK_TX_DONE_PENDING,
                     1,
-                    1);
+                    0);
         }
 
         if (event.value.signals & SL_ACK_TIMEOUT) {
@@ -381,7 +381,7 @@ static void rf_thread_loop(const void *arg)
                     current_tx_handle,
                     PHY_LINK_TX_FAIL,
                     1,
-                    1);
+                    0);
         }
 
         if(event.value.signals & SL_TX_ERR) {
@@ -389,9 +389,9 @@ static void rf_thread_loop(const void *arg)
             SL_DEBUG_PRINT("rf_thread_loop: TX ERR");
             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                     current_tx_handle,
-                    PHY_LINK_CCA_FAIL,
-                    8,
-                    1);
+                    PHY_LINK_TX_FAIL,
+                    1,
+                    0);
         }
 
         if(event.value.signals & SL_TX_TIMEOUT) {
@@ -400,8 +400,8 @@ static void rf_thread_loop(const void *arg)
             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                     current_tx_handle,
                     PHY_LINK_CCA_FAIL,
-                    8,
-                    1);
+                    csma_config.csmaTries,
+                    0);
         }
 
         if(event.value.signals & SL_CAL_REQ) {
@@ -1016,7 +1016,7 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                                                   current_tx_handle,
                                                   PHY_LINK_TX_FAIL,
                                                   1,
-                                                  1);
+                                                  0);
 #endif
                 }
                 break;
@@ -1210,7 +1210,7 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                                                   PHY_LINK_TX_SUCCESS,
                                                   // Succeeded, so how many times we tried is really not relevant.
                                                   1,
-                                                  1);
+                                                  0);
                 }
 #endif
                 last_tx = RAIL_GetTime();
@@ -1230,13 +1230,13 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                 waiting_for_ack = false;
                 radio_state = RADIO_RX;
 #ifdef MBED_CONF_RTOS_PRESENT
-                osSignalSet(rf_thread_id, SL_TX_TIMEOUT);
+                osSignalSet(rf_thread_id, SL_TX_ERR);
 #else
                 device_driver.phy_tx_done_cb(rf_radio_driver_id,
                                               current_tx_handle,
-                                              PHY_LINK_CCA_FAIL,
-                                              8,
-                                              1);
+                                              PHY_LINK_TX_FAIL,
+                                              1,
+                                              0);
 #endif
                 break;
             /* Occurs when a TX ACK is aborted by the user */
@@ -1247,13 +1247,13 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                 waiting_for_ack = false;
                 radio_state = RADIO_RX;
 #ifdef MBED_CONF_RTOS_PRESENT
-                osSignalSet(rf_thread_id, SL_TX_TIMEOUT);
+                osSignalSet(rf_thread_id, SL_TX_ERR);
 #else
                 device_driver.phy_tx_done_cb(rf_radio_driver_id,
                                               current_tx_handle,
-                                              PHY_LINK_CCA_FAIL,
-                                              8,
-                                              1);
+                                              PHY_LINK_TX_FAIL,
+                                              1,
+                                              0);
 #endif
                 break;
             /* Occurs when a TX ACK is blocked by something like PTA or RHO */
@@ -1264,13 +1264,13 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                 waiting_for_ack = false;
                 radio_state = RADIO_RX;
 #ifdef MBED_CONF_RTOS_PRESENT
-                osSignalSet(rf_thread_id, SL_TX_TIMEOUT);
+                osSignalSet(rf_thread_id, SL_TX_ERR);
 #else
                 device_driver.phy_tx_done_cb(rf_radio_driver_id,
                                               current_tx_handle,
-                                              PHY_LINK_CCA_FAIL,
-                                              8,
-                                              1);
+                                              PHY_LINK_TX_FAIL,
+                                              1,
+                                              0);
 #endif
                 break;
             /* Occurs when the buffer used for TX acking underflows */
@@ -1290,8 +1290,8 @@ static void radioEventHandler(RAIL_Handle_t railHandle,
                 device_driver.phy_tx_done_cb(rf_radio_driver_id,
                                               current_tx_handle,
                                               PHY_LINK_CCA_FAIL,
-                                              8,
-                                              1);
+                                              csma_config.csmaTries,
+                                              0);
 #endif
                 break;
             /* Occurs when a CCA check is being retried */
