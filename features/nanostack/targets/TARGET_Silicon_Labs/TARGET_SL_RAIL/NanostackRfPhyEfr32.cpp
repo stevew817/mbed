@@ -376,7 +376,7 @@ static void rf_thread_loop(const void *arg)
 
         if (event.value.signals & SL_ACK_TIMEOUT) {
             event.value.signals &= ~SL_ACK_TIMEOUT;
-            SL_DEBUG_PRINT("rf_thread_loop: ACK timeout");
+            SL_WARN_PRINT("rf_thread_loop: no ACK recv");
             device_driver.phy_tx_done_cb(rf_radio_driver_id,
                     current_tx_handle,
                     PHY_LINK_TX_FAIL,
@@ -386,7 +386,7 @@ static void rf_thread_loop(const void *arg)
 
         if(event.value.signals & SL_TX_ERR) {
             event.value.signals &= ~SL_TX_ERR;
-            SL_DEBUG_PRINT("rf_thread_loop: TX ERR");
+            SL_WARN_PRINT("rf_thread_loop: TX ERR");
             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                     current_tx_handle,
                     PHY_LINK_TX_FAIL,
@@ -396,7 +396,7 @@ static void rf_thread_loop(const void *arg)
 
         if(event.value.signals & SL_TX_TIMEOUT) {
             event.value.signals &= ~SL_TX_TIMEOUT;
-            SL_DEBUG_PRINT("rf_thread_loop: TX timeout");
+            SL_WARN_PRINT("rf_thread_loop: CCA timeout");
             device_driver.phy_tx_done_cb( rf_radio_driver_id,
                     current_tx_handle,
                     PHY_LINK_CCA_FAIL,
