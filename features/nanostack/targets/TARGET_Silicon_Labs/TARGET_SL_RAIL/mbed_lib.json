@@ -1,0 +1,17 @@
+{
+    "name": "nanostack-phy-efr32",
+    "config": {
+        "rf-thread-stack-size": {
+            "help": "Define RF event handler thread stack size. [bytes]",
+            "value": 1024
+        },
+        "rf-queue-size": {
+            "help": "Define the amount of packets the RF event handler can buffer. This will determine the size of the statically-allocated packet buffer memory pool.",
+            "value": 8
+        },
+        "debug": {
+            "help": "Compile in debug printing for the RF driver (depends on mbed-trace also being enabled)",
+            "value": false
+        }
+    }
+}
