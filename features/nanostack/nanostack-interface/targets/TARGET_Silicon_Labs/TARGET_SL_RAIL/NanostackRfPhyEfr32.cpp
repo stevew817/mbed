@@ -496,7 +496,7 @@ static int8_t rf_device_register(void)
     }
 #endif
     // Set the output power to the maximum supported by this chip
-    if (RAIL_SetTxPowerDbm(gRailHandle, RAIL_TX_POWER_MAX) != RAIL_STATUS_NO_ERROR) {
+    if (RAIL_SetTxPower(gRailHandle, RAIL_TX_POWER_LEVEL_MAX) != RAIL_STATUS_NO_ERROR) {
         MBED_ERROR(MBED_ERROR_UNSUPPORTED, "The PA power could not be set");
     }
 
